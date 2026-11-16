@@ -92,7 +92,7 @@ make deps            # several hours; produces lib/macos_x64
 ```
 
 Then build as in step 3. `make deps` only needs re-running when the library versions change
-(on a Blender upgrade), so CI caches its output (see `.github/workflows/vse_build.yml`).
+(on a Blender upgrade), so keep the resulting `lib/macos_x64` folder.
 To keep it short, `build_files/build_environment` can be limited to the libraries listed in
 `build_files/vse/fetch_libs.py`.
 
@@ -101,8 +101,8 @@ To keep it short, `build_files/build_environment` can be limited to the librarie
 A build made on a new distribution needs that distribution's C library (glibc) or newer to
 run. Two ways to cover every distribution:
 
-1. **Build on Rocky Linux 8** (glibc 2.28, what Blender's own Linux releases use). The CI
-   workflow does this in a container, and the precompiled libraries are already built for it.
+1. **Build on Rocky Linux 8** (glibc 2.28, what Blender's own Linux releases use), e.g. in a
+   container. The precompiled libraries are already built for it.
 2. **Flatpak**, as a fallback when a system lacks GPU or audio libraries: the runtime
    brings its own.
 

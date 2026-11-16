@@ -36,13 +36,19 @@ def _deferred_start():
         theme.apply_if_first_run()
     except Exception as ex:
         print("latest avenue theme not applied: {:s}".format(str(ex)))
+    if os.environ.get("VSE_NO_GAME_VIEW") != "1":
+        try:
+            from vse_standalone import game_view
+            game_view.start()
+        except Exception as ex:
+            print("Game view not started: {:s}".format(str(ex)))
     return None
 
 
 class VSE_OT_open_game_ui(bpy.types.Operator):
-    """Open the keyboard-driven Color and Crop passes in their own window"""
+    """Open the web version of the Color and Crop passes in a separate window"""
     bl_idname = "vse.open_game_ui"
-    bl_label = "Color Pass"
+    bl_label = "Open Web UI"
 
     def execute(self, context):
         from vse_standalone import server, shell
@@ -85,6 +91,10 @@ class SEQUENCER_PT_vse_automation(bpy.types.Panel):
             layout.label(text="Server stopped", icon='UNLINKED')
             layout.operator("vse.control_server", text="Start Server").action = 'START'
         layout.operator("vse.open_game_ui", icon='WINDOW')
+        layout.separator()
+        row = layout.row(align=True)
+        row.prop(context.window_manager, "vse_zoom", text="Zoom")
+        row.operator("vse.zoom_all_clips", text="Zoom All Clips")
         log = server.recent_log()[-12:]
         if log:
             box = layout.box()
@@ -97,16 +107,47 @@ class SEQUENCER_PT_vse_automation(bpy.types.Panel):
             layout.label(text="Undo with Ctrl+Z (Edit > Undo History)", icon='INFO')
 
 
+class VSE_OT_zoom_all_clips(bpy.types.Operator):
+    """Set the zoom of every video clip in the timeline (the Crop pass)"""
+    bl_idname = "vse.zoom_all_clips"
+    bl_label = "Zoom All Clips"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        from vse_standalone import api, color_pass
+        try:
+            r = color_pass.zoom_all_clips(context.window_manager.vse_zoom)
+        except api.APIError as ex:
+            self.report({'ERROR'}, str(ex))
+            return {'CANCELLED'}
+        self.report({'INFO'}, "{:d} changed, {:d} already at {:.2f}".format(
+            r["changed"], r["unchanged"], r["zoom"]))
+        return {'FINISHED'}
+
+
 def _draw_header_button(self, context):
-    self.layout.operator("vse.open_game_ui", text="Color Pass", icon='COLOR')
+    from vse_standalone import game_view
+    if context.space_data.view_type == 'PREVIEW':
+        self.layout.operator("vse.game_view", text="Game View", icon='COLOR',
+                             depress=game_view.G["active"])
 
 
-_classes = (VSE_OT_open_game_ui, VSE_OT_control_server, SEQUENCER_PT_vse_automation)
+def _game_view_class():
+    from vse_standalone import game_view
+    return game_view.VSE_OT_game_view
+
+
+_classes = (VSE_OT_open_game_ui, VSE_OT_control_server, VSE_OT_zoom_all_clips,
+            SEQUENCER_PT_vse_automation)
 
 
 def register():
+    bpy.types.WindowManager.vse_zoom = bpy.props.FloatProperty(
+        name="Zoom", default=1.34, min=0.1, max=10.0, precision=2)
     for cls in _classes:
         bpy.utils.register_class(cls)
+    if not bpy.app.background:
+        bpy.utils.register_class(_game_view_class())
     bpy.types.SEQUENCER_HT_header.append(_draw_header_button)
     if bpy.app.background:
         # Background sessions start the server explicitly with `server.serve_forever()`.
@@ -119,6 +160,11 @@ def unregister():
     bpy.types.SEQUENCER_HT_header.remove(_draw_header_button)
     for cls in reversed(_classes):
         bpy.utils.unregister_class(cls)
+    if not bpy.app.background:
+        from vse_standalone import game_view
+        game_view.stop()
+        bpy.utils.unregister_class(_game_view_class())
+    del bpy.types.WindowManager.vse_zoom
     if _on_factory_preferences in bpy.app.handlers.load_factory_preferences_post:
         bpy.app.handlers.load_factory_preferences_post.remove(_on_factory_preferences)
     from vse_standalone import server
