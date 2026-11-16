@@ -49,12 +49,16 @@ no Mac available) for a later session that runs on Sam's own computer.
 
 | Item | State |
 |---|---|
-| Linux x64 compile | In progress. All unmodified Blender code compiled; our C++ was being compiled and fixed (two errors in `MOD_lut.cc` fixed so far). **Not yet linked or launched.** |
-| Everything in `scripts/modules/vse_standalone/`, `tools/vse_mcp/`, `tests/vse/` | **Written, never run.** Expect bugs: Python API names (e.g. strip properties, theme property names, operator arguments) were taken from reading the source, not from running it. |
-| LUT modifier, ripple cut, ripple delete range (C++) | Written; being compiled for the first time, never run. |
+| Linux x64 build | **Builds, links and launches** (GCC 14, Ubuntu 24.04). |
+| `tests/vse/test_vse.py` | **13 of 13 pass** on Linux: video export and import, LUT pixel values, ripple delete / cut / delete range, split, trim, color pass, crop zoom. |
+| `tests/vse/test_mcp_e2e.py` | **Passes** on Linux: MCP client lists tools, edits, gets errors and rendered frames back; web UI routes respond. |
+| Game view | Checked on Linux with simulated key presses on a virtual display (software rendering): preview, apply and advance, pass state, HUD drawing. **Not yet used by a person on real hardware.** |
+| Theme | Applies with every property resolving. Only seen in screenshots; needs a visual pass against latestavenue.com. |
+| Two-pane default layout | Not done when this was written (see step 3.1), unless a later commit says so. |
 | macOS build, `install_mac.command` | **Never run on a Mac.** |
 | Windows build | Never attempted. |
-| App icon | Made (`release/vse/icon/`), wired into the macOS plist, Windows `.ico`, Linux `.svg`. Not seen in a built app. |
+| App icon | Made and wired in; not seen in a built Mac or Windows app. |
+| Web version of the game UI (`ui/`) | Routes tested; the page itself not opened in a browser against the editor. |
 
 If a later commit message or this table says otherwise, trust the later one.
 
@@ -65,7 +69,7 @@ other platforms follow [BUILDING_VSE.md](BUILDING_VSE.md).
 
 Likely first failures and where to look:
 
-- **Compile errors in our C++**: `source/blender/sequencer/intern/lut.cc`,
+- **Compile errors in our C++** (it compiles with GCC 14 on Linux; Clang or MSVC may be stricter): `source/blender/sequencer/intern/lut.cc`,
   `source/blender/sequencer/intern/modifiers/MOD_lut.cc`,
   `source/blender/editors/space_sequencer/sequencer_edit.cc` (search "VSE Standalone"),
   `source/blender/makesrna/intern/rna_screen.cc`, `rna_sequencer.cc` (search `LUT`).
