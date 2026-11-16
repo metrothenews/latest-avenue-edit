@@ -15,6 +15,19 @@ Everything we added on top of Blender is either C++ inside Blender's existing mo
 the same way on every platform) or Python using only the standard library, so the platforms
 differ only in toolchain and libraries.
 
+## Mac: install and update in one step
+
+On an Apple Silicon Mac with Xcode and Homebrew installed:
+
+```bash
+GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 https://github.com/metrothenews/latest-avenue-edit ~/latest-avenue-edit
+```
+
+Then double-click `install_mac.command` in that folder (or run it in Terminal). It installs
+the build tools, downloads the libraries, compiles, and puts **latest avenue video** in
+`/Applications`. **To update, run it again:** it pulls the latest code, rebuilds only what
+changed, and replaces the app. Once installed, the app runs offline.
+
 ## 1. Requirements
 
 | | Linux | macOS | Windows |

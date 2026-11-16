@@ -122,6 +122,7 @@ set(SRC
 )
 
 set(LIB
+  PRIVATE bf::extern::fast_float
   PRIVATE bf::blenfont
   PRIVATE bf::blenkernel
   PRIVATE bf::blenlib

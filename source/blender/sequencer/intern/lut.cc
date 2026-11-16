@@ -6,7 +6,6 @@
  * \ingroup sequencer
  */
 
-#include <charconv>
 #include <cstdlib>
 #include <mutex>
 #include <unordered_map>
@@ -18,6 +17,8 @@
 #include "BLI_utildefines.h"
 
 #include "MEM_guardedalloc.h"
+
+#include "fast_float.h"
 
 #include "SEQ_lut.hh"
 
@@ -43,9 +44,9 @@ static bool parse_floats(StringRef s, float *r_values, const int count)
     if (p >= end) {
       return false;
     }
-    /* `strtof` is locale dependent for the decimal separator; LUT files always use '.',
-     * `std::from_chars` is locale independent. */
-    const std::from_chars_result res = std::from_chars(p, end, r_values[i]);
+    /* Locale independent (LUT files always use '.'), and available on every platform
+     * (unlike floating point `std::from_chars`, missing on older macOS targets). */
+    const fast_float::from_chars_result res = fast_float::from_chars(p, end, r_values[i]);
     if (res.ec != std::errc()) {
       return false;
     }
