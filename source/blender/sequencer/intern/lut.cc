@@ -14,7 +14,7 @@
 #include "BLI_math_base.hh"
 #include "BLI_math_vector.hh"
 #include "BLI_string_ref.hh"
-#include "BLI_utildefines.h"
+#include "BLI_utildefines.hh"
 
 #include "MEM_guardedalloc.h"
 

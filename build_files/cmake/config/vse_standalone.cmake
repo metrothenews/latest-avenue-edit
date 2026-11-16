@@ -81,7 +81,7 @@ set(WITH_INPUT_NDOF          OFF CACHE BOOL "" FORCE) # 3D mice.
 set(WITH_LLVM                OFF CACHE BOOL "" FORCE)
 set(WITH_CLANG               OFF CACHE BOOL "" FORCE)
 set(WITH_IMAGE_CINEON        ON  CACHE BOOL "" FORCE) # DPX is common in film work.
-set(WITH_IMAGE_OPENJPEG      OFF CACHE BOOL "" FORCE)
+set(WITH_IMAGE_OPENJPEG      ON  CACHE BOOL "" FORCE) # Also required by FFmpeg.
 
 # ---------------------------------------------------------------------------
 # Build / platform.
