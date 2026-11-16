@@ -29,6 +29,7 @@ set(SRC
   SEQ_edit.hh
   SEQ_effects.hh
   SEQ_iterator.hh
+  SEQ_lut.hh
   SEQ_modifier.hh
   SEQ_modifiertypes.hh
   SEQ_offscreen.hh
@@ -83,6 +84,7 @@ set(SRC
   intern/modifiers/MOD_hue_correct.cc
   intern/modifiers/MOD_mask.cc
   intern/modifiers/MOD_none.cc
+  intern/modifiers/MOD_lut.cc
   intern/modifiers/MOD_sound_echo.cc
   intern/modifiers/MOD_sound_equalizer.cc
   intern/modifiers/MOD_sound_pitch.cc
@@ -91,6 +93,7 @@ set(SRC
   intern/modifiers/modifier.cc
   intern/modifiers/modifier.hh
   intern/iterator.cc
+  intern/lut.cc
   intern/media_presence.cc
   intern/multiview.cc
   intern/multiview.hh

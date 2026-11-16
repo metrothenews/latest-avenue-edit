@@ -59,6 +59,8 @@ const EnumPropertyItem rna_enum_region_panel_category_items[] = {
 
 #  include "RNA_access.hh"
 
+#  include "BLI_string.hh"
+
 #  include "BKE_global.hh"
 #  include "BKE_main.hh"
 #  include "BKE_screen.hh"
@@ -199,6 +201,20 @@ static void rna_Area_type_update(bContext *C, PointerRNA *ptr)
   WM_main_add_notifier(NC_NODE | ND_NODE_GIZMO, nullptr);
 }
 
+/**
+ * VSE Standalone: editors that only serve 3D work are hidden from the editor-type menu.
+ * They remain valid values for the Python API so existing scripts and files keep working.
+ */
+static bool rna_Area_ui_type_is_hidden(const int space_type)
+{
+  return ELEM(space_type, SPACE_VIEW3D, SPACE_CLIP, SPACE_NLA, SPACE_SPREADSHEET);
+}
+
+static bool rna_Area_ui_subtype_is_hidden(const char *identifier)
+{
+  return STR_ELEM(identifier, "UV", "ShaderNodeTree", "GeometryNodeTree", "TextureNodeTree");
+}
+
 static const EnumPropertyItem *rna_Area_ui_type_itemf(bContext *C,
                                                       PointerRNA *ptr,
                                                       PropertyRNA * /*prop*/,
@@ -217,14 +233,25 @@ static const EnumPropertyItem *rna_Area_ui_type_itemf(bContext *C,
     if (ELEM(item_from->value, SPACE_TOPBAR, SPACE_STATUSBAR)) {
       continue;
     }
+    /* Keep the current editor type listed, so the menu can still show what is active. */
+    if (rna_Area_ui_type_is_hidden(item_from->value) && item_from->value != area->spacetype) {
+      continue;
+    }
 
     SpaceType *st = item_from->identifier[0] ? BKE_spacetype_from_id(item_from->value) : nullptr;
     int totitem_prev = totitem;
     if (C && st && st->space_subtype_item_extend != nullptr) {
       st->space_subtype_item_extend(C, &item, &totitem);
-      while (totitem_prev < totitem) {
-        item[totitem_prev++].value |= item_from->value << 16;
+      int totitem_keep = totitem_prev;
+      for (int i = totitem_prev; i < totitem; i++) {
+        if (rna_Area_ui_subtype_is_hidden(item[i].identifier)) {
+          continue;
+        }
+        item[totitem_keep] = item[i];
+        item[totitem_keep].value |= item_from->value << 16;
+        totitem_keep++;
       }
+      totitem = totitem_keep;
     }
     else {
       RNA_enum_item_add(&item, &totitem, item_from);

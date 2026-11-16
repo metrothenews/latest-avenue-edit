@@ -909,6 +909,8 @@ enum eStripModifierType : uint32_t {
   eSeqModifierType_Compositor = 9,
   eSeqModifierType_Pitch = 10,
   eSeqModifierType_Echo = 11,
+  /** VSE Standalone: color grading with a Look-Up Table file (`.cube`). */
+  eSeqModifierType_LUT = 12,
   /* Keep last. */
   NUM_STRIP_MODIFIER_TYPES,
 };
@@ -1056,6 +1058,23 @@ struct EchoModifierData {
   float feedback = 0;
   float mix = 0;
   char _pad[4] = {};
+};
+
+/** #LUTModifierData.flag */
+enum eLUTModifierFlag : int32_t {
+  /** Clamp the LUT input to the LUT domain (otherwise values outside are extrapolated
+   * by clamping the lookup coordinates, which is equivalent for most LUTs). */
+  SEQ_LUT_CLAMP_OUTPUT = (1 << 0),
+};
+
+struct LUTModifierData {
+  StripModifierData modifier;
+  /** Path to a LUT file (`.cube`), may be relative to the blend-file (`//`). */
+  char filepath[/*FILE_MAX*/ 1024] = "";
+  /** Blend factor between the original image (0) and the graded image (1). */
+  float intensity = 1.0f;
+  /** #eLUTModifierFlag. */
+  int flag = 0;
 };
 
 /** \} */

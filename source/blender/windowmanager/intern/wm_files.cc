@@ -1202,10 +1202,15 @@ bool WM_file_read_project(bContext *C, const char *filepath, ReportList *reports
   return true;
 }
 
+/* VSE Standalone: always start in the Video Editing app-template so the
+ * application opens directly into the sequencer, with no 3D workspaces.
+ * Can still be overridden from the command line with `--app-template`. */
+#define VSE_STANDALONE_APP_TEMPLATE "Video_Editing"
+
 static struct {
   char app_template[64];
   bool override;
-} wm_init_state_app_template = {{0}};
+} wm_init_state_app_template = {VSE_STANDALONE_APP_TEMPLATE, true};
 
 void WM_init_state_app_template_set(const char *app_template)
 {

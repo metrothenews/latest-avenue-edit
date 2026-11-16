@@ -1,0 +1,23 @@
+{
+  "name": "night",
+  "luts": [
+    "NIGHT_1_33Pt.cube",
+    "NIGHT_2_33Pt.cube",
+    "NIGHT_3_33Pt.cube",
+    "NIGHT_4_33Pt.cube",
+    "NIGHT_5_33Pt.cube",
+    "NIGHT_6_33Pt.cube",
+    "NIGHT_7_33Pt.cube",
+    "NIGHT_8_33Pt.cube"
+  ],
+  "color_luts": [
+    "NIGHT_COLOR_1_33Pt.cube",
+    "NIGHT_COLOR_2_33Pt.cube",
+    "NIGHT_COLOR_3_33Pt.cube",
+    "NIGHT_COLOR_4_33Pt.cube",
+    "NIGHT_COLOR_5_33Pt.cube",
+    "NIGHT_COLOR_6_33Pt.cube",
+    "NIGHT_COLOR_7_33Pt.cube",
+    "NIGHT_COLOR_8_33Pt.cube"
+  ]
+}

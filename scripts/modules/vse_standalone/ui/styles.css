@@ -1,0 +1,133 @@
+/* Look copied from latest avenue (Intellijend Clone/src/index.css, tailwind.config.js, ui/Button.jsx).
+   Dark frosted glass, subtle blue glow, pill buttons, Inter, no animation. */
+
+@font-face { font-family: Inter; src: url('/fonts/Inter.woff2') format('woff2'); font-weight: 100 900; font-display: block; }
+
+* { box-sizing: border-box; margin: 0; }
+[hidden] { display: none !important; }
+
+html { background: #0a0a0a; }
+body {
+  height: 100vh; overflow: hidden; color: #fff;
+  font-family: Inter, system-ui, -apple-system, sans-serif; font-size: 14px;
+  -webkit-font-smoothing: antialiased; user-select: none; -webkit-user-select: none; cursor: default;
+}
+body::before {
+  content: ''; position: fixed; inset: 0; z-index: -1;
+  background:
+    radial-gradient(70% 55% at 50% 0%, rgba(130, 115, 255, 0.14), transparent 70%),
+    radial-gradient(50% 50% at 100% 100%, rgba(60, 170, 255, 0.06), transparent 70%),
+    #0a0a0a;
+}
+
+.glass {
+  border: 1px solid rgba(55, 65, 81, 0.5); border-radius: 12px;
+  background: rgba(17, 24, 39, 0.3);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.glass-bar {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1); background: rgba(0, 0, 0, 0.3);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+}
+
+.app { display: flex; flex-direction: column; height: 100%; }
+
+/* Toolbar */
+.toolbar { display: flex; align-items: center; gap: 12px; height: 64px; padding: 0 24px; flex-shrink: 0; white-space: nowrap; }
+.wordmark { font-size: 18px; font-weight: 800; letter-spacing: -0.025em; }
+.tag, .pill { border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 999px; padding: 2px 8px; font-size: 12px; color: rgba(255, 255, 255, 0.6); }
+.tabs { display: flex; gap: 4px; margin-left: 8px; }
+.tab { border: 0; background: none; font: inherit; cursor: pointer; border-radius: 999px; padding: 6px 12px; color: rgba(255, 255, 255, 0.6); }
+.tab:hover { color: #fff; }
+.tab.active { background: rgba(255, 255, 255, 0.1); color: #fff; }
+.group { display: flex; align-items: center; gap: 10px; margin-left: 4px; padding-left: 16px; border-left: 1px solid rgba(255, 255, 255, 0.1); flex-shrink: 0; }
+#clipinfo { flex-shrink: 1; min-width: 0; overflow: hidden; }
+#clipinfo > * { flex-shrink: 0; }
+#clipinfo > #name { flex-shrink: 1; min-width: 0; }
+.caption { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: rgba(255, 255, 255, 0.4); }
+.muted { color: rgba(255, 255, 255, 0.4); }
+.small { font-size: 12px; }
+.strong { font-weight: 600; }
+#name { color: rgba(255, 255, 255, 0.7); overflow: hidden; text-overflow: ellipsis; }
+.select {
+  border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 999px; background: rgba(255, 255, 255, 0.05);
+  color: #fff; font: inherit; padding: 6px 12px; outline: none;
+}
+.seg { display: flex; gap: 2px; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 999px; background: rgba(255, 255, 255, 0.05); padding: 3px; }
+.segbtn { border: 0; border-radius: 999px; background: none; color: rgba(255, 255, 255, 0.6); font: inherit; padding: 4px 12px; cursor: pointer; }
+.segbtn:hover { color: #fff; }
+.segbtn.active { background: rgba(255, 255, 255, 0.15); color: #fff; }
+.segbtn:disabled { opacity: 0.4; cursor: not-allowed; }
+.right { display: flex; align-items: center; gap: 12px; margin-left: auto; min-width: 0; flex-shrink: 20; }
+.right > .btn, .right > #progress { flex-shrink: 0; }
+.btn {
+  border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 999px; background: rgba(255, 255, 255, 0.05);
+  color: #fff; font: inherit; font-weight: 600; padding: 8px 16px; cursor: pointer;
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+}
+.btn:hover { background: rgba(255, 255, 255, 0.1); }
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.btn.primary { border-color: rgba(255, 255, 255, 0.25); background: rgba(255, 255, 255, 0.2); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25); }
+.btn.primary:hover { background: rgba(255, 255, 255, 0.3); }
+.conn {
+  display: flex; align-items: center; gap: 8px; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05); padding: 6px 12px; font-size: 12px; color: rgba(255, 255, 255, 0.7);
+  min-width: 0; flex-shrink: 1; overflow: hidden;
+}
+#conn { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.conn b { color: #fff; font-weight: 500; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(255, 255, 255, 0.3); flex-shrink: 0; }
+.dot.on { background: #fff; }
+
+/* Preview */
+.stage { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; gap: 24px; padding: 24px; }
+.viewer { position: relative; flex: 1; min-height: 0; min-width: 320px; display: flex; align-items: center; justify-content: center; padding: 8px; overflow: hidden; }
+.viewer img { height: 100%; max-width: 100%; object-fit: contain; border-radius: 8px; display: block; }
+.placeholder { padding: 0 64px; color: rgba(255, 255, 255, 0.5); text-align: center; }
+.label {
+  position: absolute; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 999px; background: rgba(0, 0, 0, 0.5);
+  padding: 4px 12px; font-size: 12px; font-weight: 600;
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+}
+.label.tl { top: 20px; left: 20px; } .label.tr { top: 20px; right: 20px; }
+.label.bl { bottom: 20px; left: 20px; } .label.br { bottom: 20px; right: 20px; max-width: 60%; }
+.label.bright { border-color: rgba(255, 255, 255, 0.25); background: rgba(255, 255, 255, 0.2); }
+.label.dim { border-color: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.6); font-weight: 400; }
+.label.error { border-color: rgba(255, 255, 255, 0.4); font-weight: 400; border-radius: 12px; }
+
+.overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.6); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+.card { max-width: 440px; padding: 32px; text-align: center; }
+.card h2 { font-size: 24px; font-weight: 700; letter-spacing: -0.025em; }
+.card p { margin-top: 8px; color: rgba(255, 255, 255, 0.6); line-height: 1.5; }
+.row { display: flex; justify-content: center; gap: 8px; margin-top: 24px; }
+
+/* Crop tab */
+.stage.center { justify-content: center; }
+.card.wide { width: 440px; max-width: 100%; }
+.fieldrow { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 24px; }
+.field {
+  width: 110px; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 8px; background: rgba(255, 255, 255, 0.05);
+  color: #fff; font: inherit; font-size: 16px; font-weight: 600; padding: 8px 12px; outline: none; text-align: center;
+  user-select: text; -webkit-user-select: text;
+}
+.field:focus { border-color: rgba(255, 255, 255, 0.4); }
+.card .result { margin-top: 20px; font-size: 13px; }
+
+/* LUT keys */
+.keyarea { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.keys { display: flex; gap: 12px; }
+.keys .gap { width: 40px; }
+.key {
+  width: 80px; height: 80px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  color: rgba(255, 255, 255, 0.7); font: inherit; font-size: 24px; font-weight: 700; cursor: pointer; position: relative;
+}
+.key:hover { background: rgba(255, 255, 255, 0.1); }
+.key small { margin-top: 2px; font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; color: rgba(255, 255, 255, 0.4); }
+.key.on { border-color: rgba(255, 255, 255, 0.4); background: rgba(255, 255, 255, 0.2); color: #fff; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25); }
+.key.applied::after { content: ''; position: absolute; top: 8px; right: 8px; width: 6px; height: 6px; border-radius: 50%; background: #fff; }
+.hints { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 16px; font-size: 12px; color: rgba(255, 255, 255, 0.5); }
+kbd {
+  border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 6px; background: rgba(255, 255, 255, 0.05);
+  padding: 2px 6px; font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: rgba(255, 255, 255, 0.7);
+}

@@ -2992,6 +2992,182 @@ void SEQUENCER_OT_ripple_delete(wmOperatorType *ot)
 /** \} */
 
 /* -------------------------------------------------------------------- */
+/** \name Ripple Cut Strips Operator
+ *
+ * VSE Standalone: copy the selected strips to the clipboard, then ripple delete them.
+ * \{ */
+
+static wmOperatorStatus sequencer_ripple_cut_exec(bContext *C, wmOperator *op)
+{
+  if (sequencer_clipboard_copy_exec(C, op) != OPERATOR_FINISHED) {
+    return OPERATOR_CANCELLED;
+  }
+  return sequencer_ripple_delete_exec(C, op);
+}
+
+static wmOperatorStatus sequencer_ripple_cut_invoke(bContext *C,
+                                                    wmOperator *op,
+                                                    const wmEvent * /*event*/)
+{
+  ripple_properties_from_tool_settings(C, op);
+  return sequencer_ripple_cut_exec(C, op);
+}
+
+void SEQUENCER_OT_ripple_cut(wmOperatorType *ot)
+{
+  /* Identifiers. */
+  ot->name = "Ripple Cut Strips";
+  ot->idname = "SEQUENCER_OT_ripple_cut";
+  ot->description =
+      "Copy the selected strips to the clipboard, delete them and close the gaps left behind";
+
+  /* API callbacks. */
+  ot->invoke = sequencer_ripple_cut_invoke;
+  ot->exec = sequencer_ripple_cut_exec;
+  ot->poll = sequencer_edit_poll;
+
+  /* Flags. */
+  ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
+
+  /* Properties. */
+  operator_properties_ripple(
+      ot, SEQ_RIPPLE_ALL_CHANNELS | SEQ_RIPPLE_MARKERS | SEQ_RIPPLE_CLEAR_RANGES);
+}
+
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Ripple Delete Range Operator
+ *
+ * VSE Standalone: remove a frame range from the timeline and close the gap.
+ * Designed for automation: the range and channel are explicit properties, no selection or
+ * editor context is needed. When invoked interactively without a range set, the scene's
+ * preview range (In/Out points) is used.
+ * \{ */
+
+static wmOperatorStatus sequencer_ripple_delete_range_exec(bContext *C, wmOperator *op)
+{
+  Main *bmain = CTX_data_main(C);
+  Scene *scene = CTX_data_sequencer_scene(C);
+  Editing *ed = seq::editing_get(scene);
+  ListBaseT<Strip> *seqbasep = seq::active_seqbase_get(ed);
+  const ListBaseT<SeqTimelineChannel> *channels = seq::channels_displayed_get(ed);
+  const int timeline_frame = scene->r.cfra;
+
+  const int frame_start = RNA_int_get(op->ptr, "frame_start");
+  const int frame_end = RNA_int_get(op->ptr, "frame_end");
+  const int channel = RNA_int_get(op->ptr, "channel");
+  if (frame_end <= frame_start) {
+    BKE_report(op->reports, RPT_ERROR, "End frame must be greater than start frame");
+    return OPERATOR_CANCELLED;
+  }
+
+  eSeqRippleFlag ripple_flag = SEQ_RIPPLE_CLEAR_RANGES;
+  SET_FLAG_FROM_TEST(ripple_flag, RNA_boolean_get(op->ptr, "markers"), SEQ_RIPPLE_MARKERS);
+  SET_FLAG_FROM_TEST(ripple_flag, channel == 0, SEQ_RIPPLE_ALL_CHANNELS);
+
+  seq::RippleRange range{frame_start, frame_end, {}};
+  if (channel > 0) {
+    range.channels.add(channel);
+  }
+
+  seq::prefetch_stop(scene);
+
+  ripple_range_clear(scene, seqbasep, channels, range, channel == 0);
+  ripple_gaps_close(scene, seqbasep, channels, range, ripple_flag);
+
+  if (scene->r.cfra != timeline_frame) {
+    DEG_id_tag_update(&scene->id, ID_RECALC_FRAME_CHANGE);
+    WM_event_add_notifier(C, NC_SCENE | ND_FRAME, scene);
+  }
+
+  vse::sync_active_scene_and_time_with_scene_strip(*C);
+
+  DEG_id_tag_update(&scene->id, ID_RECALC_SEQUENCER_STRIPS);
+  if (scene->adt && scene->adt->action) {
+    DEG_id_tag_update(&scene->adt->action->id, ID_RECALC_ANIMATION_NO_FLUSH);
+  }
+  DEG_relations_tag_update(bmain);
+  WM_event_add_notifier(C, NC_SCENE | ND_SEQUENCER, scene);
+  WM_event_add_notifier(C, NC_SCENE | ND_ANIMCHAN, scene);
+  return OPERATOR_FINISHED;
+}
+
+static wmOperatorStatus sequencer_ripple_delete_range_invoke(bContext *C,
+                                                             wmOperator *op,
+                                                             const wmEvent * /*event*/)
+{
+  Scene *scene = CTX_data_sequencer_scene(C);
+  PropertyRNA *prop_start = RNA_struct_find_property(op->ptr, "frame_start");
+  PropertyRNA *prop_end = RNA_struct_find_property(op->ptr, "frame_end");
+  if (!RNA_property_is_set(op->ptr, prop_start) && !RNA_property_is_set(op->ptr, prop_end)) {
+    if (scene == nullptr || (scene->r.flag & SCER_PRV_RANGE) == 0) {
+      BKE_report(op->reports,
+                 RPT_ERROR,
+                 "Set a preview range (In/Out points) or pass frame_start and frame_end");
+      return OPERATOR_CANCELLED;
+    }
+    /* Preview range end is inclusive, the ripple range end is exclusive. */
+    RNA_property_int_set(op->ptr, prop_start, scene->r.psfra);
+    RNA_property_int_set(op->ptr, prop_end, scene->r.pefra + 1);
+  }
+  return sequencer_ripple_delete_range_exec(C, op);
+}
+
+void SEQUENCER_OT_ripple_delete_range(wmOperatorType *ot)
+{
+  /* Identifiers. */
+  ot->name = "Ripple Delete Range";
+  ot->idname = "SEQUENCER_OT_ripple_delete_range";
+  ot->description =
+      "Remove a frame range from the timeline (splitting strips at its edges) and close the gap";
+
+  /* API callbacks. */
+  ot->invoke = sequencer_ripple_delete_range_invoke;
+  ot->exec = sequencer_ripple_delete_range_exec;
+  ot->poll = sequencer_edit_poll;
+
+  /* Flags. */
+  ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
+
+  /* Properties. */
+  PropertyRNA *prop;
+  prop = RNA_def_int(ot->srna,
+                     "frame_start",
+                     0,
+                     INT_MIN,
+                     INT_MAX,
+                     "Start Frame",
+                     "First frame of the range to remove",
+                     INT_MIN,
+                     INT_MAX);
+  RNA_def_property_flag(prop, PROP_SKIP_SAVE);
+  prop = RNA_def_int(ot->srna,
+                     "frame_end",
+                     0,
+                     INT_MIN,
+                     INT_MAX,
+                     "End Frame",
+                     "Frame after the last frame of the range to remove (exclusive)",
+                     INT_MIN,
+                     INT_MAX);
+  RNA_def_property_flag(prop, PROP_SKIP_SAVE);
+  prop = RNA_def_int(ot->srna,
+                     "channel",
+                     0,
+                     0,
+                     seq::MAX_CHANNELS,
+                     "Channel",
+                     "Only remove the range on this channel (0 for all channels)",
+                     0,
+                     seq::MAX_CHANNELS);
+  RNA_def_property_flag(prop, PROP_SKIP_SAVE);
+  operator_properties_ripple(ot, SEQ_RIPPLE_MARKERS);
+}
+
+/** \} */
+
+/* -------------------------------------------------------------------- */
 /** \name Ripple Trim Strips Operator
  * \{ */
 

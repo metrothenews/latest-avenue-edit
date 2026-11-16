@@ -262,9 +262,7 @@ class TOPBAR_MT_file_new(Menu):
             show_more = False
 
         # Draw application templates.
-        if not use_more:
-            props = layout.operator("wm.read_homefile", text="General", icon='FILE_NEW')
-            props.app_template = ""
+        # VSE Standalone: the "General" (3D) template is not offered.
 
         for d in paths:
             icon = 'FILE_NEW'

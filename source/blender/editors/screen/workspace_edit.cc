@@ -595,7 +595,7 @@ static void workspace_add_menu_draw(ui::Layout &layout)
   }
   layout.separator();
 
-  layout.menu_fn(IFACE_("General"), ICON_NONE, workspace_add_menu, nullptr);
+  /* VSE Standalone: the "General" (3D) workspace set is not offered. */
 
   ListBaseT<LinkData> templates;
   BKE_appdir_app_templates(&templates);

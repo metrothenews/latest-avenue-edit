@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>latest avenue video</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+
+    <!-- Toolbar -->
+    <header class="glass-bar toolbar">
+      <span class="wordmark">latest avenue</span>
+      <span class="tag">video</span>
+      <nav class="tabs" id="tabs">
+        <button class="tab active" data-tab="color">Color</button>
+        <button class="tab" data-tab="crop">Crop</button>
+      </nav>
+
+      <div class="group coloronly">
+        <span class="caption">Mode</span>
+        <select id="mode" class="select"></select>
+      </div>
+
+      <div class="group coloronly">
+        <span class="caption">Pass</span>
+        <div class="seg" id="passes">
+          <button class="segbtn active" data-pass="look">1 Look</button>
+          <button class="segbtn" data-pass="color">2 Color</button>
+        </div>
+      </div>
+
+      <div class="group" id="clipinfo" hidden>
+        <span class="muted">Clip</span>
+        <span class="strong" id="pos"></span>
+        <span id="name"></span>
+        <span class="pill" id="graded" hidden>graded</span>
+        <span class="pill" id="otherlut" hidden></span>
+      </div>
+
+      <div class="right">
+        <span class="muted small" id="progress" hidden></span>
+        <button class="btn" id="load">Load clips</button>
+        <div class="conn"><span class="dot" id="dot"></span><span id="conn">Connecting…</span></div>
+      </div>
+    </header>
+
+    <!-- Preview -->
+    <!-- Crop tab: one click zooms every clip -->
+    <main class="stage center" id="cropstage" hidden>
+      <div class="glass card wide">
+        <h2>Crop</h2>
+        <p>Zoom in every clip in the timeline by the same amount.</p>
+        <label class="fieldrow"><span class="caption">Zoom</span><input class="field" id="zoom" type="number" min="0.1" max="10" step="0.01" value="1.34"></label>
+        <div class="row"><button class="btn primary" id="zoombtn">Zoom all clips</button></div>
+        <p class="result" id="cropresult" hidden></p>
+      </div>
+    </main>
+
+    <main class="stage" id="colorstage">
+      <div class="glass viewer">
+        <img id="frame" alt="" hidden>
+        <p class="placeholder" id="placeholder">Connecting to the editor…</p>
+        <div class="label tl" id="lutlabel" hidden></div>
+        <div class="label tr bright" id="applied" hidden></div>
+        <div class="label bl dim" id="hint1s" hidden>frame at 1 s</div>
+        <div class="label br error" id="cliperror" hidden></div>
+
+        <div class="overlay" id="notice" hidden>
+          <div class="glass card">
+            <h2 id="noticetitle"></h2>
+            <p id="noticetext"></p>
+            <div class="row" id="noticebtns"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- LUT keys -->
+      <div class="keyarea">
+        <div class="keys" id="keys"></div>
+        <p class="hints">
+          <span><kbd>1</kbd>–<kbd>4</kbd> <kbd>7</kbd>–<kbd>0</kbd> preview <span id="hintmode">NIGHT</span> 1–8</span>
+          <span><kbd>tab</kbd> switch pass</span>
+          <span><kbd>⌫</kbd> no LUT</span>
+          <span><kbd>space</kbd> apply &amp; next clip</span>
+          <span><kbd>←</kbd> <kbd>→</kbd> move without applying</span>
+        </p>
+      </div>
+    </main>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

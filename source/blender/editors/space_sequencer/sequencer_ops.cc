@@ -39,6 +39,8 @@ void sequencer_operatortypes()
   WM_operatortype_append(SEQUENCER_OT_delete);
   WM_operatortype_append(SEQUENCER_OT_ripple_delete);
   WM_operatortype_append(SEQUENCER_OT_ripple_trim);
+  WM_operatortype_append(SEQUENCER_OT_ripple_cut);
+  WM_operatortype_append(SEQUENCER_OT_ripple_delete_range);
   WM_operatortype_append(SEQUENCER_OT_offset_clear);
   WM_operatortype_append(SEQUENCER_OT_images_separate);
   WM_operatortype_append(SEQUENCER_OT_meta_toggle);

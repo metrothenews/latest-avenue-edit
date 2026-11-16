@@ -24,6 +24,7 @@ extern StripModifierTypeInfo seqModifierType_Mask;
 extern StripModifierTypeInfo seqModifierType_SoundEqualizer;
 extern StripModifierTypeInfo seqModifierType_Pitch;
 extern StripModifierTypeInfo seqModifierType_Echo;
+extern StripModifierTypeInfo seqModifierType_LUT;
 extern StripModifierTypeInfo seqModifierType_Tonemap;
 extern StripModifierTypeInfo seqModifierType_WhiteBalance;
 

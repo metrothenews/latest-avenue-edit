@@ -54,6 +54,7 @@ struct EffectInfo {
   {eSeqModifierType_Compositor, "COMPOSITOR", ICON_NODE_COMPOSITING, "Compositor", ""}, \
   {eSeqModifierType_Curves, "CURVES", ICON_MOD_CURVES, "Curves", ""}, \
   {eSeqModifierType_HueCorrect, "HUE_CORRECT", ICON_MOD_HUE_CORRECT, "Hue Correct", ""}, \
+  {eSeqModifierType_LUT, "LUT", ICON_COLOR, "LUT", "Color grade with a Look-Up Table file (.cube)"}, \
   {eSeqModifierType_Mask, "MASK", ICON_MOD_MASK, "Mask", ""}, \
   {eSeqModifierType_Tonemap, "TONEMAP", ICON_MOD_TONEMAP, "Tone Map", ""}, \
   {eSeqModifierType_WhiteBalance, "WHITE_BALANCE", ICON_MOD_WHITE_BALANCE, "White Balance", ""}
@@ -1674,6 +1675,8 @@ static StructRNA *rna_StripModifier_refine(PointerRNA *ptr)
       return RNA_PitchModifier;
     case eSeqModifierType_Echo:
       return RNA_EchoModifier;
+    case eSeqModifierType_LUT:
+      return RNA_LUTModifier;
     default:
       return RNA_StripModifier;
   }
@@ -4566,6 +4569,39 @@ static void rna_def_brightcontrast_modifier(BlenderRNA *brna)
   rna_def_modifier_panel_open_prop(srna, "open_mask_input_panel", 1);
 }
 
+static void rna_def_lut_modifier(BlenderRNA *brna)
+{
+  StructRNA *srna;
+  PropertyRNA *prop;
+
+  srna = RNA_def_struct(brna, "LUTModifier", "StripModifier");
+  RNA_def_struct_ui_icon(srna, ICON_COLOR);
+  RNA_def_struct_sdna(srna, "LUTModifierData");
+  RNA_def_struct_ui_text(
+      srna, "LUTModifier", "Color grade a strip with a Look-Up Table file (.cube, 1D or 3D)");
+
+  prop = RNA_def_property(srna, "filepath", PROP_STRING, PROP_FILEPATH);
+  RNA_def_property_string_sdna(prop, nullptr, "filepath");
+  RNA_def_property_flag(prop, PROP_PATH_SUPPORTS_BLEND_RELATIVE);
+  RNA_def_property_ui_text(
+      prop, "LUT File", "Path to the Look-Up Table file (.cube), may be relative to the blend-file");
+  RNA_def_property_update(prop, NC_SCENE | ND_SEQUENCER, "rna_StripModifier_update");
+
+  prop = RNA_def_property(srna, "intensity", PROP_FLOAT, PROP_FACTOR);
+  RNA_def_property_float_sdna(prop, nullptr, "intensity");
+  RNA_def_property_range(prop, 0.0f, 1.0f);
+  RNA_def_property_ui_text(
+      prop, "Intensity", "Blend between the original image (0) and the graded image (1)");
+  RNA_def_property_update(prop, NC_SCENE | ND_SEQUENCER, "rna_StripModifier_update");
+
+  prop = RNA_def_property(srna, "use_clamp", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, nullptr, "flag", SEQ_LUT_CLAMP_OUTPUT);
+  RNA_def_property_ui_text(prop, "Clamp", "Clamp the graded colors to the 0-1 range");
+  RNA_def_property_update(prop, NC_SCENE | ND_SEQUENCER, "rna_StripModifier_update");
+
+  rna_def_modifier_panel_open_prop(srna, "open_mask_input_panel", 1);
+}
+
 static void rna_def_tonemap_modifier(BlenderRNA *brna)
 {
   StructRNA *srna;
@@ -4691,6 +4727,7 @@ static void rna_def_modifiers(BlenderRNA *brna)
   rna_def_hue_modifier(brna);
   rna_def_mask_modifier(brna);
   rna_def_brightcontrast_modifier(brna);
+  rna_def_lut_modifier(brna);
   rna_def_whitebalance_modifier(brna);
   rna_def_tonemap_modifier(brna);
   rna_def_compositor_modifier(brna);

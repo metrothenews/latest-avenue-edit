@@ -403,6 +403,7 @@ static void modifier_types_init(StripModifierTypeInfo *types[])
   INIT_TYPE(SoundEqualizer);
   INIT_TYPE(Pitch);
   INIT_TYPE(Echo);
+  INIT_TYPE(LUT);
   INIT_TYPE(Tonemap);
   INIT_TYPE(WhiteBalance);
 #undef INIT_TYPE

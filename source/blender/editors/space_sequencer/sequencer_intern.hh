@@ -242,6 +242,8 @@ void SEQUENCER_OT_duplicate(wmOperatorType *ot);
 void SEQUENCER_OT_delete(wmOperatorType *ot);
 void SEQUENCER_OT_ripple_delete(wmOperatorType *ot);
 void SEQUENCER_OT_ripple_trim(wmOperatorType *ot);
+void SEQUENCER_OT_ripple_cut(wmOperatorType *ot);
+void SEQUENCER_OT_ripple_delete_range(wmOperatorType *ot);
 void SEQUENCER_OT_offset_clear(wmOperatorType *ot);
 void SEQUENCER_OT_images_separate(wmOperatorType *ot);
 void SEQUENCER_OT_meta_toggle(wmOperatorType *ot);
