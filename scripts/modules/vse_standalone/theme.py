@@ -86,7 +86,7 @@ def _palette():
         "btn_emphasis": btn_emphasis,
         "text": text, "text_body": text_body, "text_dim": text_dim, "text_faint": text_faint,
         "brand": brand, "glow": glow, "glow_soft": glow_soft,
-        "black": _hex(t["black"]),
+        "black": _hex(t["black"]), "white": _hex(t["white"]),
     }
 
 
@@ -231,33 +231,49 @@ def _apply_user_interface(s, ui, p):
 
 
 def _apply_space_generic(s, space, p, path, *, back=None, header=None):
-    back = back or p["glass"]
-    header = header or p["bar"]
     s.many(space, {
-        "back": back,
-        "title": p["text"],
+        "back": back or p["glass"],
+        "header": _rgba(header or p["bar"]),
         "text": p["text_body"],
         "text_hi": p["text"],
-        "header": _rgba(header),
-        "header_text": p["text_body"],
-        "header_text_hi": p["text"],
-        "button": _rgba(p["glass_raised"]),
-        "button_title": p["text"],
-        "button_text": p["text_body"],
-        "button_text_hi": p["text"],
-        "navigation_bar": p["bar"],
-        "execution_buts": p["bar"],
-        "tab_active": p["btn_emphasis"],
-        "tab_inactive": p["glass"],
-        "tab_back": _rgba(p["ink"]),
-        "tab_outline": p["border"],
     }, path)
-    panel = getattr(space, "panelcolors", None)
-    s.many(panel, {
-        "header": _rgba(p["glass_raised"]),
-        "back": _rgba(p["glass"]),
-        "sub_back": _rgba(p["black"], 0.18),
-    }, path + "panelcolors.")
+
+
+def _apply_shared(s, theme, p):
+    """Panels, sidebars, channel lists and animation colors shared by every editor."""
+    s.many(theme.user_interface, {
+        "panel_header": _rgba(p["glass_raised"]),
+        "panel_title": p["text"],
+        "panel_text": p["text_body"],
+        "panel_back": _rgba(p["glass"]),
+        "panel_sub_back": _rgba(p["black"], 0.18),
+        "panel_outline": _rgba(p["border"]),
+        "panel_active": _rgba(p["brand"], 0.6),
+    }, "user_interface.")
+    regions = getattr(theme, "regions", None)
+    if regions is not None:
+        s.many(getattr(regions, "sidebars", None),
+               {"back": _rgba(p["glass"]), "tab_back": _rgba(p["ink"])}, "regions.sidebars.")
+        s.many(getattr(regions, "channels", None),
+               {"back": _rgba(p["glass"]), "text": p["text_body"], "text_selected": p["text"]},
+               "regions.channels.")
+        s.many(getattr(regions, "scrubbing", None),
+               {"back": _rgba(p["bar"]), "text": p["text_body"],
+                "time_marker": _rgba(p["text_dim"]), "time_marker_selected": _rgba(p["text"])},
+               "regions.scrubbing.")
+        s.many(getattr(regions, "asset_shelf", None),
+               {"back": _rgba(p["glass"]), "header_back": _rgba(p["bar"])},
+               "regions.asset_shelf.")
+    anim = getattr(getattr(theme, "common", None), "anim", None)
+    s.many(anim, {
+        "playhead": _rgba(p["glow"]),
+        "channels": _rgba(p["glass"]),
+        "channels_sub": _rgba(p["glass_raised"]),
+        "channel_group": _rgba(p["btn_secondary"]),
+        "channel_group_active": _rgba(p["btn_emphasis"]),
+        "channel": _rgba(p["glass"]),
+        "channel_selected": _rgba(p["btn_emphasis"]),
+    }, "common.anim.")
 
 
 def _apply_sequencer(s, theme, p):
@@ -267,13 +283,6 @@ def _apply_sequencer(s, theme, p):
         return
     _apply_space_generic(s, getattr(seq, "space", None), p, "sequence_editor.space.",
                          back=p["ink"])
-    lst = getattr(seq, "space_list", None)
-    s.many(lst, {
-        "list": p["glass"],
-        "list_title": p["text"],
-        "list_text": p["text_body"],
-        "list_text_hi": p["text"],
-    }, "sequence_editor.space_list.")
 
     # Strip colors: the site has no saturated accents, so strips are muted but still
     # distinguishable by type (editing requires telling clip types apart at a glance).
@@ -282,7 +291,6 @@ def _apply_sequencer(s, theme, p):
 
     s.many(seq, {
         "grid": _over(p["white"], 0.04, p["ink"]),
-        "window_sliders": p["btn_secondary_border"],
         "movie_strip": strip((0.30, 0.45, 0.70)),
         "movieclip_strip": strip((0.70, 0.35, 0.30)),
         "image_strip": strip((0.60, 0.40, 0.60)),
@@ -296,27 +304,21 @@ def _apply_sequencer(s, theme, p):
         "text_strip": strip((0.70, 0.60, 0.40)),
         "active_strip": p["text"],
         "selected_strip": p["brand"],
-        "frame_current": p["glow"],
-        "time_scrub_background": _rgba(p["bar"]),
-        "time_marker_line": _rgba(p["text_dim"], 0.5),
-        "time_marker_line_selected": _rgba(p["text"], 0.8),
         "keyframe_border": _rgba(p["black"]),
         "keyframe_border_selected": _rgba(p["brand"]),
-        "draw_action": p["glow_soft"],
         "preview_back": p["ink"],
         "metadatabg": p["glass"],
         "metadatatext": p["text_body"],
-        "preview_range": _rgba(_over(p["glow"], 0.25, p["ink"]), 0.25),
         "row_alternate": _rgba(p["white"], 0.015),
         "selected_text": _rgba(p["brand"], 0.3),
-        "cursor": p["glow"],
+        "text_strip_cursor": _rgba(p["text"]),
     }, "sequence_editor.")
 
 
 _GENERIC_SPACES = (
     "properties", "file_browser", "outliner", "info", "preferences", "text_editor",
     "console", "dopesheet_editor", "graph_editor", "node_editor", "image_editor",
-    "statusbar", "topbar", "spreadsheet", "clip_editor", "nla_editor", "view_3d",
+    "statusbar", "topbar", "spreadsheet", "clip_editor", "nla_editor",
 )
 
 
@@ -332,33 +334,15 @@ def apply(context=None, *, report=False):
     s = _Setter()
 
     _apply_user_interface(s, theme.user_interface, p)
+    _apply_shared(s, theme, p)
     _apply_sequencer(s, theme, p)
     for name in _GENERIC_SPACES:
         space_theme = getattr(theme, name, None)
         if space_theme is None:
             continue
-        header = p["bar"] if name in {"topbar", "statusbar"} else None
-        back = p["bar"] if name in {"topbar", "statusbar"} else None
+        bar = name in {"topbar", "statusbar"}
         _apply_space_generic(s, getattr(space_theme, "space", None), p, name + ".space.",
-                             back=back, header=header)
-        lst = getattr(space_theme, "space_list", None)
-        if lst is not None:
-            s.many(lst, {"list": p["glass"], "list_text": p["text_body"],
-                         "list_text_hi": p["text"], "list_title": p["text"]},
-                   name + ".space_list.")
-
-    # Properties-editor and outliner selection highlights in the accent color.
-    s.set(getattr(theme, "outliner", None), "selected_highlight",
-          _rgba(p["btn_emphasis"]), "outliner.")
-    s.set(getattr(theme, "outliner", None), "active_highlight",
-          _rgba(p["btn_primary"]), "outliner.")
-    s.set(getattr(theme, "properties", None), "match", p["glow_soft"], "properties.")
-    s.set(getattr(theme, "properties", None), "active_modifier", _rgba(p["brand"]),
-          "properties.")
-    s.set(getattr(theme, "file_browser", None), "selected_file", p["btn_emphasis"],
-          "file_browser.")
-    s.set(getattr(theme, "text_editor", None), "selected_text", p["btn_emphasis"],
-          "text_editor.")
+                             back=p["bar"] if bar else None)
 
     if report and s.missing:
         print("latest avenue theme: {:d} properties not available in this build:".format(

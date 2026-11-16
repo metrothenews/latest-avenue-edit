@@ -391,6 +391,10 @@ void WM_init(bContext *C, int argc, const char **argv)
 
 static bool wm_init_splash_show_on_startup_check()
 {
+  /* VSE Standalone: open straight into the editor, Blender's splash and first-run setup
+   * are not shown at startup (still available from the application menu). */
+  return false;
+
   if (U.uiflag & USER_SPLASH_DISABLE) {
     return false;
   }

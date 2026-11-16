@@ -163,6 +163,8 @@ def _rounded(x, y, w, h, r, color):
         for i in range(7):
             a = a0 + (pi / 2) * i / 6
             verts.append((cx + cos(a) * r, cy + sin(a) * r))
+    # Text drawing resets the blend mode, so set it for every shape.
+    gpu.state.blend_set('ALPHA')
     shader = gpu.shader.from_builtin('UNIFORM_COLOR')
     batch = batch_for_shader(shader, 'TRI_FAN', {"pos": verts})
     shader.bind()
@@ -359,6 +361,10 @@ class VSE_OT_game_view(bpy.types.Operator):
         except api.APIError as ex:
             G["message"] = str(ex)
         context.window_manager.modal_handler_add(self)
+        try:
+            bpy.ops.sequencer.view_all_preview()
+        except RuntimeError:
+            pass
         _redraw(context)
         return {'RUNNING_MODAL'}
 

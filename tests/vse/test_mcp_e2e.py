@@ -64,8 +64,8 @@ def main():
             bridge.stdin.flush()
             return json.loads(bridge.stdout.readline())
 
-        def tool(name, **args):
-            reply = rpc("tools/call", {"name": name, "arguments": args})
+        def tool(tool_name, **args):
+            reply = rpc("tools/call", {"name": tool_name, "arguments": args})
             result = reply["result"]
             if result.get("isError"):
                 raise RuntimeError(result["content"][0]["text"])
