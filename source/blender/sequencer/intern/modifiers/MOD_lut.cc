@@ -14,6 +14,7 @@
 
 #include "BLT_translation.hh"
 
+#include "BKE_context.hh"
 #include "BKE_main.hh"
 
 #include "DNA_scene_types.h"
@@ -137,7 +138,7 @@ static void lut_panel_draw(const bContext *C, Panel *panel)
   layout.use_property_split_set(true);
 
   layout.prop(ptr, "filepath", UI_ITEM_NONE, std::nullopt, ICON_NONE);
-  layout.prop(ptr, "intensity", UI_ITEM_R_SLIDER, std::nullopt, ICON_NONE);
+  layout.prop(ptr, "intensity", ui::ITEM_R_SLIDER, std::nullopt, ICON_NONE);
   layout.prop(ptr, "use_clamp", UI_ITEM_NONE, std::nullopt, ICON_NONE);
 
   /* Show LUT status so problems are visible without consulting the console. */

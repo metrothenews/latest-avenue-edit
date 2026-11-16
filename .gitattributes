@@ -111,3 +111,8 @@
 *.rgb filter=lfs diff=lfs merge=lfs -text
 *.btx filter=lfs diff=lfs merge=lfs -text
 scripts/modules/_bpy_internal/assets/remote_library/*_openapi.py linguist-generated=true
+
+# latest avenue video: small own assets are stored in git directly, not in LFS.
+release/vse/** -filter -diff -merge
+release/darwin/Blender.app/Contents/Resources/la.icns -filter -diff -merge
+scripts/modules/vse_standalone/** -filter -diff -merge
