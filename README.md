@@ -54,7 +54,8 @@ no Mac available) for a later session that runs on Sam's own computer.
 | `tests/vse/test_mcp_e2e.py` | **Passes** on Linux: MCP client lists tools, edits, gets errors and rendered frames back; web UI routes respond. |
 | Game view | Checked on Linux with simulated key presses on a virtual display (software rendering): preview, apply and advance, pass state, HUD drawing. **Not yet used by a person on real hardware.** |
 | Theme | Applies with every property resolving. Only seen in screenshots; needs a visual pass against latestavenue.com. |
-| Two-pane default layout | Not done when this was written (see step 3.1), unless a later commit says so. |
+| Two-pane default layout | **Done**: game view left, timeline right, `F` full-screen; seen in screenshots on Linux. |
+| Startup | No Blender splash. On a machine without a working Vulkan driver a "Failed to load using Vulkan, using OpenGL" notice appears (seen on the GPU-less cloud machine); expected to be absent on real hardware, unverified. |
 | macOS build, `install_mac.command` | **Never run on a Mac.** |
 | Windows build | Never attempted. |
 | App icon | Made and wired in; not seen in a built Mac or Windows app. |
@@ -110,12 +111,11 @@ Then launch the app normally and check by hand, in this order:
 
 ## Step 3: remaining work, in order
 
-1. **Two-pane default layout.** Wanted: one window, game view pane on the left, full
-   timeline on the right, `F` for full-screen game view. The game view currently attaches
-   to whatever preview pane the Video Editing template has. Edit the template's
-   `scripts/startup/bl_app_templates_system/Video_Editing/startup.blend` (open the app,
-   arrange the screen, File > Defaults > Save Startup File, copy the saved file over it) so
-   the default layout is exactly those two panes.
+1. **Game view polish.** The two-pane default layout is in (it is the Video Editing
+   template's `startup.blend`, exempted from LFS in `.gitattributes`). Still to do: the
+   picture sits behind the top bar and the LUT keys instead of being fitted between them;
+   the timeline pane opens zoomed in instead of showing the whole edit; the sidebar with
+   strip properties is hidden by default.
 2. **Own settings folder.** The app still uses Blender's config folder
    (`~/Library/Application Support/Blender/5.3` on macOS), so it shares preferences with a
    real Blender 5.3 on the same machine. Change the folder name in
