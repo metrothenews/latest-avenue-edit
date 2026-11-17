@@ -48,6 +48,17 @@ Then double-click `install_mac.command`. First run on Apple Silicon: about 1.5 G
 downloads and 30–90 minutes of compiling. On an Intel Mac the libraries are compiled first
 (several more hours, once). **To update, run it again** (a few minutes). The app runs offline.
 
+**Development mode** (for changing the app's Python: game view, control server, web UI):
+
+```bash
+~/latest-avenue-edit/build_files/vse/run_dev_mac.sh
+```
+
+This runs a copy of the installed app (`../latest-avenue-video-dev`, an APFS clone, so it takes
+no extra space) whose `scripts` folder is linked to the repository. Edit files under `scripts/`,
+then quit and run the command again; no rebuild needed. Output goes to the Terminal and
+`../latest-avenue-video-dev/dev.log`. C/C++ changes still need `install_mac.command`.
+
 ---
 
 # Handoff: instructions for a Claude session running on the local machine
@@ -349,6 +360,7 @@ there. Consequences:
 |---|---|
 | `build_files/cmake/config/vse_standalone.cmake` | Which Blender features are built, per platform |
 | `build_files/vse/fetch_libs.py` | Downloads precompiled libraries for this platform |
+| `build_files/vse/run_dev_mac.sh` | Development mode on a Mac: runs the app with `scripts/` from the repo |
 | `install_mac.command` | Mac install and update |
 | `scripts/modules/vse_standalone/api.py` | Automation tools |
 | `scripts/modules/vse_standalone/server.py` | Local control server, 127.0.0.1:8792 |
