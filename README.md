@@ -242,8 +242,11 @@ git tag "v$(cat VSE_VERSION)" && git push --no-verify origin main --tags
    `releases/latest/download/<file>` links in "Install a finished version" always point at
    the newest one (the version is in the release's tag and title):
 
-   - **Mac, Apple Silicon**: `ditto -c -k --keepParent "/Applications/latest avenue video.app" latest-avenue-video-macos-arm64.zip`
-   - **Mac, Intel**: same command, named `latest-avenue-video-macos-x64.zip`.
+   - **Mac (either chip)**: `build_files/vse/package_mac.sh` makes
+     `latest-avenue-video-macos-arm64.zip` or `-macos-x64.zip` in the current folder. Don't
+     zip `/Applications/latest avenue video.app` directly: running the app writes Python
+     caches into it, which breaks its signature, and another Mac then calls the download
+     "damaged". The script packages a cleaned, re-signed copy and checks the zip.
      The app is only ad-hoc signed: on another Mac, right-click > Open the first time (or
      `xattr -dr com.apple.quarantine` on the app). Proper signing and notarization need an
      Apple Developer ID and are not set up.
