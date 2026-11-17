@@ -122,11 +122,19 @@ fi
 [ "${VSE_CLEAN:-0}" = "1" ] && rm -rf "$BUILD"
 mkdir -p "$BUILD"
 
+# Blender only picks its own install folder on the first configure of a build folder; if
+# that first configure stopped early, the cache holds /usr/local. Always install to bin/.
+if [ -f "$BUILD/CMakeCache.txt" ] && \
+   ! grep -q "^CMAKE_INSTALL_PREFIX:PATH=$BUILD/bin$" "$BUILD/CMakeCache.txt"; then
+  cmake -DCMAKE_INSTALL_PREFIX="$BUILD/bin" "$BUILD" >> "$LOG" 2>&1 || true
+fi
+
 if [ ! -f "$BUILD/build.ninja" ]; then
   say_step "Configuring"
   cmake -S "$REPO" -B "$BUILD" -G Ninja \
     -C "$REPO/build_files/cmake/config/vse_standalone.cmake" \
-    -DCMAKE_BUILD_TYPE=Release 2>&1 | tee "$LOG" | grep -E "^CMake (Error|Warning)|Configuring done|Generating done" || true
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX="$BUILD/bin" 2>&1 | tee "$LOG" | grep -E "^CMake (Error|Warning)|Configuring done|Generating done" || true
   [ -f "$BUILD/build.ninja" ] || fail "configuring failed. Full log: $LOG"
 fi
 
