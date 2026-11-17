@@ -10,6 +10,8 @@
 #   cloud/deploy.sh                 deploy with the defaults below
 #   OWNER_UIDS=a,b cloud/deploy.sh  allow more than one Firebase user
 #   APP_DIR=/path/to/build/bin cloud/deploy.sh   use a local Linux build instead of the release
+#   APP_TARBALL=~/Downloads/latest-avenue-video-linux-x64.tar.xz cloud/deploy.sh
+#                                   use a downloaded Linux build file instead of the release
 #
 # What it creates, all in one project and region:
 #   - a Cloud Run service (scales to zero; at most one instance)
@@ -46,6 +48,8 @@ gcloud auth list --filter=status:ACTIVE --format='value(account)' | grep -q . ||
 step "Staging the editor"
 if [ -n "${APP_DIR:-}" ]; then
   cp -R "$APP_DIR" "$STAGE/app"
+elif [ -n "${APP_TARBALL:-}" ]; then
+  tar -xJf "$APP_TARBALL" -C "$STAGE"
 else
   command -v gh >/dev/null || { echo "Install the gh CLI, or pass APP_DIR=<a Linux build's bin folder>"; exit 1; }
   gh release download --repo metrothenews/latest-avenue-edit --pattern "$RELEASE_FILE" --dir "$STAGE"

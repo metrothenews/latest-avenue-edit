@@ -63,6 +63,20 @@ the `gh` CLI (to download the Linux build from this repo's release).
 cloud/deploy.sh
 ```
 
+The Linux build it downloads is `latest-avenue-video-linux-x64.tar.xz` on the latest release.
+**That file is not on the release yet** (the session that made it could not upload to GitHub
+and handed it over as a download instead). Either upload it once:
+
+```bash
+gh release upload v0.1.0 latest-avenue-video-linux-x64.tar.xz --repo metrothenews/latest-avenue-edit
+```
+
+or deploy straight from the downloaded file:
+
+```bash
+APP_TARBALL=~/Downloads/latest-avenue-video-linux-x64.tar.xz cloud/deploy.sh
+```
+
 It prints the gateway's address. Put that in `editServiceUrl` in `src/data/edit.js` of the
 `latest-avenue` repo, then build and deploy the site. Run `cloud/deploy.sh` again to update:
 it lays this checkout's Python (`scripts/modules/vse_standalone` and friends) over the Linux
