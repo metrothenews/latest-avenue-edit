@@ -108,6 +108,7 @@ class _Job:
 def _execute(job):
     from . import api
     from . import color_pass  # noqa: F401 (registers the color pass tools)
+    from . import lyric_video  # noqa: F401 (registers the lyric video tools)
     started = time.time()
     try:
         if job.method == "tools/list":

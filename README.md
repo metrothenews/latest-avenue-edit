@@ -88,12 +88,13 @@ no Mac available) for a later session that runs on Sam's own computer.
 | Item | State |
 |---|---|
 | Linux x64 build | **Builds, links and launches** (GCC 14, Ubuntu 24.04). |
-| `tests/vse/test_vse.py` | **13 of 13 pass** on Linux and on the Intel Mac: video export and import, LUT pixel values, ripple delete / cut / delete range, split, trim, color pass, crop zoom. |
+| `tests/vse/test_vse.py` | **16 of 16 pass** on the Intel Mac (13 of 13 on Linux before the lyric video tests were added) on Linux and on the Intel Mac: video export and import, LUT pixel values, ripple delete / cut / delete range, split, trim, color pass, crop zoom. |
 | `tests/vse/test_mcp_e2e.py` | **Passes** on Linux and on the Intel Mac (10 checks, the preview-frame one skipped by design with no clips): MCP client lists tools, edits, gets errors and rendered frames back; web UI routes respond. |
 | Game view | Checked on Linux with simulated key presses on a virtual display (software rendering): preview, apply and advance, pass state, HUD drawing. **Not yet used by a person on real hardware.** |
 | Theme | Applies with every property resolving. Only seen in screenshots; needs a visual pass against latestavenue.com. |
 | Two-pane default layout | **Done**: game view left, timeline right, `F` full-screen; seen in screenshots on Linux. |
 | Pane arrangement | **Works on the Intel Mac** (development mode): View > Arrangement in either pane switches between Side by Side and Stacked (preview on top, timeline below); remembered in `vse_layout.json` in the config folder. Tested by script in the GUI (switching both ways, restart); not yet checked by eye. |
+| Lyric videos ("new style") | **Works on the Intel Mac**: `align_lyrics.py` times a lyric sheet against an audio clip and corrects misheard words to the sheet; `make_lyric_video.py` / the `make_lyric_video` tool builds and exports the 3:4 word-by-word video. Used for Assignment 17 (three IMPULSIVE videos, 1080×1920, 30 fps); frames checked by eye by Claude, timing cross-checked with two recognizer models, not yet listened to by a person. See `doc/vse/lyric_video_workflow.md`. |
 | Startup | No Blender splash. On a machine without a working Vulkan driver a "Failed to load using Vulkan, using OpenGL" notice appears (seen on the GPU-less cloud machine); expected to be absent on real hardware, unverified. |
 | macOS Apple Silicon build, `install_mac.command` | **Never run on an Apple Silicon Mac.** |
 | macOS Intel build | **Builds, installs and launches** on an Intel Mac (i9-9880H, macOS 26.7.3, Xcode 26.5) via `install_mac.command`, libraries self-built. No compile errors in our C++ under Apple Clang 21. The control server answers at 127.0.0.1:8792 after launch. Checked by eye on the Intel Mac by Sam ("looks great"): the list asked about was no splash, the "la" Dock icon, the two-pane layout, the game view HUD and the Automation panel showing the server URL. |
@@ -367,6 +368,8 @@ there. Consequences:
 | `scripts/modules/vse_standalone/server.py` | Local control server, 127.0.0.1:8792 |
 | `scripts/modules/vse_standalone/game_view.py` | Game view pane |
 | `scripts/modules/vse_standalone/layout.py` | Pane arrangement (side by side / stacked) |
+| `scripts/modules/vse_standalone/lyric_video.py` | Lyric video tools: 3:4 picture clips, word-by-word lyric text, `make_lyric_video` |
+| `tools/vse_lyrics/` | Lyric timing from audio (`align_lyrics.py`) and the command-line lyric video builder; workflow in `doc/vse/lyric_video_workflow.md` |
 | `scripts/modules/vse_standalone/color_pass.py`, `modes/`, `luts/` | Look/Color pass engine, night mode |
 | `scripts/modules/vse_standalone/theme.py` | Theme from latestavenue.com tokens |
 | `scripts/startup/vse_standalone_startup.py` | Starts everything; Automation panel |

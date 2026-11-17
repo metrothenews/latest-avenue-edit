@@ -12,6 +12,7 @@ the LUT modifier (pixel values), ripple delete / ripple cut / ripple delete rang
 the color pass engine and crop zoom. Exits non-zero on failure.
 """
 
+import json
 import os
 import sys
 import tempfile
@@ -251,6 +252,96 @@ def test_zoom_all_clips():
     assert r["changed"] == 1
     assert color_pass.zoom_all_clips(1.34)["unchanged"] == 1
     assert abs(api._strip("clip1").transform.scale_x - 1.34) < 1e-5
+
+
+def _lyrics_tool():
+    import importlib.util
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "tools", "vse_lyrics",
+                        "align_lyrics.py")
+    spec = importlib.util.spec_from_file_location("align_lyrics", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _heard(text, step=0.4):
+    return [{"text": w, "start": i * step, "end": i * step + 0.3, "probability": 0.9}
+            for i, w in enumerate(text.split())]
+
+
+@test
+def test_lyrics_align_corrects_to_sheet():
+    al = _lyrics_tool()
+    sheet = tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8")
+    # "perf\u0435ct" holds a Cyrillic letter, as lyric sheets copied from the web do.
+    sheet.write("[Verse]\nToo soon? I'm ready, babe\nWho knew I'd settle, babe\n\n[Chorus]\n"
+                "Your body perf\u0435ct, I like\nTake off, hit that runway\n")
+    sheet.close()
+    words, lines, homoglyphs = al.read_sheet(sheet.name)
+    assert len(lines) == 4 and len(homoglyphs) == 1
+    assert "perfect," in [w["text"] for w in words]
+    # Misheard words, an invented phrase in the silence at the end, a line starting mid-way.
+    heard = _heard("hold on i settle babe your body perfect i like")
+    heard += [{"text": w, "start": 9.0, "end": 9.01, "probability": 0.1} for w in ("thanks", "for", "watching")]
+    result = al.align(heard, words, lines, 10.0)
+    assert [l["text"] for l in result["lines"]] == ["Who knew I'd settle, babe", "Your body perfect, I like"], result["lines"]
+    assert all(l["complete"] for l in result["lines"])
+    starts = [w["start"] for w in result["words"]]
+    assert starts == sorted(starts)
+    assert any(c["heard"] == "i" and c["sheet"] == "I'd" for c in result["corrections"])
+
+
+@test
+def test_lyric_layout():
+    from vse_standalone import lyric_video
+    assert lyric_video.display_word("Soon?") == "soon"
+    assert lyric_video.display_word("I\u2019m") == "i'm"
+    assert lyric_video.display_word("my\u2014") == "my"
+    placed = lyric_video.layout_block([100, 100, 100, 250, 80], 300, 20)
+    assert [row for row, _x in placed] == [0, 0, 1, 2, 3], placed
+    assert placed[0][1] == 0 and placed[1][1] == 200  # justified: last word ends on the right edge
+    cuts = lyric_video.plan_cuts({"lines": [
+        {"start": 0.3, "end": 2.0, "words": [0, 1]}, {"start": 2.5, "end": 9.0, "words": [2, 3, 4]}],
+        "words": [{"start": 0.3}, {"start": 1.0}, {"start": 2.5}, {"start": 5.5}, {"start": 8.0}]}, 10.0)
+    assert cuts[0][0] == 0.0 and cuts[-1][1] == 10.0
+    assert all(abs(a[1] - b[0]) < 1e-9 for a, b in zip(cuts, cuts[1:]))
+    assert (2.5, 5.5) in cuts, cuts
+
+
+@test
+def test_make_lyric_video():
+    from vse_standalone import lyric_video
+    reset()
+    fps = 30.0
+    lyrics = {"duration": 1.5, "words": [
+        {"text": "Too", "start": 0.1, "end": 0.3}, {"text": "soon?", "start": 0.4, "end": 0.6},
+        {"text": "I'm", "start": 0.8, "end": 0.9}, {"text": "ready,", "start": 1.0, "end": 1.3}],
+        "lines": [{"start": 0.1, "end": 0.6, "words": [0, 1]}, {"start": 0.8, "end": 1.3, "words": [2, 3]}]}
+    path = os.path.join(TMP, "song.lyrics.json")
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(lyrics, fh)
+    import wave
+    audio = os.path.join(TMP, "song.wav")
+    with wave.open(audio, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(48000)
+        wav.writeframes(b"\0\0" * int(48000 * 1.5))
+    out = os.path.join(TMP, "lyric_video.mp4")
+    r = api.call("make_lyric_video", {"audio": audio, "lyrics": path, "clips": [VIDEO, VIDEO, VIDEO],
+                                      "output": out, "fps": fps})
+    assert r["frames"] >= 45 and r["lyrics"]["words"] == 4, r
+    assert r["render"]["exists"] and r["render"]["bytes"] > 1000
+    scene = bpy.context.scene
+    assert (scene.render.resolution_x, scene.render.resolution_y) == (1080, 1920)
+    texts = sorted((s.frame_final_start, s.text) for s in scene.sequence_editor.strips if s.type == 'TEXT')
+    assert [t for _f, t in texts] == ["too", "soon", "i'm", "ready"], texts
+    first = [s for s in scene.sequence_editor.strips if s.type == 'TEXT' and s.text == "too"][0]
+    second = [s for s in scene.sequence_editor.strips if s.type == 'TEXT' and s.text == "i'm"][0]
+    assert first.frame_final_end <= second.frame_final_start  # a line leaves when the next arrives
+    movie = [s for s in scene.sequence_editor.strips if s.type == 'MOVIE'][0]
+    shown_h = (movie.elements[0].orig_height - movie.crop.min_y - movie.crop.max_y) * movie.transform.scale_y
+    assert abs(shown_h - 1440) <= 2, shown_h  # 3:4 picture, 240 px bars above and below
 
 
 def main():
