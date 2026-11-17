@@ -88,7 +88,7 @@ no Mac available) for a later session that runs on Sam's own computer.
 | Item | State |
 |---|---|
 | Linux x64 build | **Builds, links and launches** (GCC 14, Ubuntu 24.04). |
-| `tests/vse/test_vse.py` | **16 of 16 pass** on the Intel Mac and on Linux: video export and import, LUT pixel values, ripple delete / cut / delete range, split, trim, color pass, crop zoom. |
+| `tests/vse/test_vse.py` | **20 of 20 pass** on the Intel Mac (16 of 16 on Linux, before the four lyric timing / clip planning tests were added): video export and import, LUT pixel values, ripple delete / cut / delete range, split, trim, color pass, crop zoom. |
 | `tests/vse/test_mcp_e2e.py` | **Passes** on Linux and on the Intel Mac (10 checks, the preview-frame one skipped by design with no clips): MCP client lists tools, edits, gets errors and rendered frames back; web UI routes respond. |
 | Game view | Checked on Linux with simulated key presses on a virtual display (software rendering): preview, apply and advance, pass state, HUD drawing. **Not yet used by a person on real hardware.** |
 | Theme | Applies with every property resolving. Only seen in screenshots; needs a visual pass against latestavenue.com. |

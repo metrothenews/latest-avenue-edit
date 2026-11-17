@@ -348,6 +348,141 @@ def test_make_lyric_video():
     assert abs(shown_h - 1440) <= 2, shown_h  # 3:4 picture, 240 px bars above and below
 
 
+def _tool_module(name):
+    import importlib.util
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "tools", "vse_lyrics",
+                        name + ".py")
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@test
+def test_forced_align_path():
+    import numpy
+    fa = _tool_module("forced_align")
+    assert fa.spell("somethin'") == "SOMETHING" and fa.spell("I\u2019m") == "I'M" and fa.spell("my\u2014") == "MY"
+    # Letters 1 and 2, blank 0. Frames: blank, 1, 1, blank, 2, 2, blank.
+    frames = [0, 1, 1, 0, 2, 2, 0]
+    probs = numpy.full((len(frames), 3), 0.05)
+    for t, k in enumerate(frames):
+        probs[t, k] = 0.9
+    spans = fa.viterbi(numpy.log(probs), [1, 2], blank=0)
+    assert spans == [(1, 2), (4, 5)], spans
+    # The same letter twice needs a blank between: 1, blank, 1.
+    frames = [1, 1, 0, 1, 0]
+    probs = numpy.full((len(frames), 3), 0.05)
+    for t, k in enumerate(frames):
+        probs[t, k] = 0.9
+    assert fa.viterbi(numpy.log(probs), [1, 1], blank=0) == [(0, 1), (3, 3)]
+    assert fa.viterbi(numpy.log(probs[:1]), [1, 1], blank=0) is None  # audio shorter than the words
+
+
+@test
+def test_clip_planning():
+    mk = _tool_module("make_lyric_video")
+    library = os.path.join(TMP, "library")
+    subjects = ["cars", "fireworks", "misc luxury", "people", "transit", "urban"]
+    lengths = {}
+    for collection in ("collection-1", "collection-2"):
+        for subject in subjects:
+            folder = os.path.join(library, collection, subject)
+            os.makedirs(folder)
+            for n in range(6):
+                path = os.path.join(folder, "{:s}{:d}.mp4".format(subject[0], n))
+                open(path, "w").close()
+                # In "fireworks" only short clips: it cannot fill a long slot.
+                lengths[path] = 1.0 if subject == "fireworks" else 2.0 + n
+    cache = os.path.join(TMP, "clip_lengths.json")
+    with open(cache, "w", encoding="utf-8") as fh:
+        json.dump(lengths, fh)
+
+    quota = mk.subject_quotas(subjects, 8, {"people": 2.0})
+    assert sum(quota.values()) == 8 and min(quota.values()) >= 1 and quota["people"] == 3, quota
+    # A subject behind its share over the earlier videos gets the leftover slot.
+    behind = mk.subject_quotas(subjects, 7, {}, {"cars": 2, "fireworks": 2, "misc luxury": 2,
+                                                  "people": 2, "transit": 2, "urban": 0})
+    assert behind["urban"] == 2, behind
+    order = mk.subject_order(quota, "people")
+    assert order[0] == "people" and len(order) == 8
+    assert all(a != b for a, b in zip(order, order[1:])), order
+
+    slots = [(i * 2.5, i * 2.5 + 2.5) for i in range(8)]
+    clips, rows, _quota = mk.plan_clips(library, slots, 1, (), {"people": 2.0}, "people", cache)
+    chosen = [row["clip"] for row in rows]
+    assert len(set(chosen)) == 8 and all(lengths[c] >= 2.5 for c in chosen), rows
+    assert clips[:8] == chosen
+    assert rows[0]["subject"] == "people"
+    assert all(a["subject"] != b["subject"] for a, b in zip(rows, rows[1:])), rows
+    assert "fireworks" not in {row["subject"] for row in rows}  # too short: slot handed on, with a note
+    assert any("note" in row for row in rows)
+    used_collections = [row["collection"] for row in rows]
+    assert abs(used_collections.count("collection-1") - used_collections.count("collection-2")) <= 2
+    # Same seed, same plan; the next video never repeats a clip.
+    assert [r["clip"] for r in mk.plan_clips(library, slots, 1, (), {"people": 2.0}, "people", cache)[1]] == chosen
+    again = [r["clip"] for r in mk.plan_clips(library, slots, 2, chosen, {"people": 2.0}, "people", cache)[1]]
+    assert not set(again) & set(chosen)
+
+
+@test
+def test_timing_refinement_rules():
+    import numpy
+    import types
+    al = _tool_module("align_lyrics")
+    rate = 16000
+    # A voice: silent to 0.5 s, sounding to 2.0 s, silent to 2.4 s, sounding to 3.5 s.
+    rng = numpy.random.default_rng(0)
+    samples = rng.normal(0.0, 0.1, int(3.5 * rate)).astype(numpy.float32)
+    samples[:int(0.5 * rate)] = 0.0
+    samples[int(2.0 * rate):int(2.4 * rate)] = 0.0
+    placed = [{"start": 0.8, "end": 0.9, "confidence": 0.1},    # "I": late, the voice enters at 0.5
+              {"start": 0.95, "end": 1.2, "confidence": 0.5},   # agrees with the recognizer
+              {"start": 2.4, "end": 2.7, "confidence": 0.4},    # right after the silence
+              {"start": 1.0, "end": 1.1, "confidence": 0.05}]   # far off and unsure
+    fake = types.ModuleType("forced_align")
+    fake.SAMPLE_RATE = rate
+    fake.load_audio = lambda path: samples
+    fake.load_model = lambda models_dir=None: (None, None)
+    fake.align_words = lambda samples, words, session, vocab: placed
+    saved = sys.modules.get("forced_align")
+    sys.modules["forced_align"] = fake
+    try:
+        result = {"words": [
+            {"text": "I", "start": 0.0, "end": 0.2, "matched": True},        # recognizer: in silence
+            {"text": "don't", "start": 0.9, "end": 1.2, "matched": True},
+            {"text": "Back", "start": 1.6, "end": 1.9, "matched": True},      # recognizer: an echo
+            {"text": "then", "start": 2.9, "end": 3.2, "matched": True}],
+            "lines": [{"words": [0, 1], "start": 0.0, "end": 1.2}, {"words": [2, 3], "start": 1.6, "end": 3.2}]}
+        al.refine_timing(result, "voice.wav", log=lambda text: None)
+    finally:
+        if saved is None:
+            del sys.modules["forced_align"]
+        else:
+            sys.modules["forced_align"] = saved
+    words = result["words"]
+    assert abs(words[0]["start"] - 0.5) < 0.05 and words[0]["source"] == "voice-onset", words[0]
+    assert words[1]["start"] == 0.95 and words[1]["source"] == "forced", words[1]
+    assert words[2]["start"] == 2.4 and words[2]["source"] == "forced", words[2]
+    assert words[3]["start"] == 2.9 and words[3]["source"] == "recognizer", words[3]
+    assert [w["start"] for w in words] == sorted(w["start"] for w in words)
+    assert result["lines"][1]["start"] == 2.4
+    assert result["timing"]["sources"] == {"forced": 2, "recognizer": 1, "voice-onset": 1}
+
+
+@test
+def test_sync_ticks():
+    from vse_standalone import lyric_video
+    reset()
+    api.set_project(fps=30.0)
+    lyrics = {"words": [{"text": "a", "start": 0.5}, {"text": "b", "start": 1.0}, {"text": "c", "start": 1.0}],
+              "lines": []}
+    r = lyric_video.add_sync_ticks(lyrics)
+    ticks = sorted(s.frame_final_start for s in bpy.context.scene.sequence_editor.strips
+                   if s.type == 'SOUND' and s.name.startswith("tick"))
+    assert r["ticks"] == 2 and ticks == [16, 31], ticks  # one tick per distinct start
+
+
 def main():
     failed = [name for name, err in RESULTS if err]
     print("\n{:d} passed, {:d} failed".format(len(RESULTS) - len(failed), len(failed)))

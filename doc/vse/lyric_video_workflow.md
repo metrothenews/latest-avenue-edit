@@ -255,8 +255,9 @@ file is now `{"videos": {name: [clips]}}`, so rebuilding one video frees its old
   (`out/review/` holds the tick copies, `out/v1_first_pass/` the first versions).
   **Not yet looked at frame by frame, and not listened to.** Check the contact sheets and
   the tick copies first.
-- `tests/vse/test_vse.py`: 16 of 16 pass. No tests yet for `forced_align.py`,
-  `refine_timing`, `plan_clips` or `add_sync_ticks`.
+- `tests/vse/test_vse.py`: 20 of 20 pass, including the timing rules (with a stand-in model),
+  the alignment path search, clip planning and the tick tool. Running the real alignment
+  model is not part of the test suite (it needs the 380 MB download).
 - Models and both Python environments are on the removable drive
   (`.../latest-avenue-edit-working/{models,lyrics-env,stems-env}`), not in the repository.
 
@@ -278,4 +279,6 @@ file is now `{"videos": {name: [clips]}}`, so rebuilding one video frees its old
 | `tools/vse_lyrics/align_lyrics.py` | Step 1: lyric timing and correction against the sheet |
 | `tools/vse_lyrics/make_lyric_video.py` | Step 2 from the command line: clip picking, build, export |
 | `scripts/modules/vse_standalone/lyric_video.py` | The editor tools and the "new style" layout values (`STYLE`) |
-| `tests/vse/test_vse.py` | `test_lyrics_align_corrects_to_sheet`, `test_lyric_layout`, `test_make_lyric_video` |
+| `tools/vse_lyrics/separate_vocals.py` | Isolates the voice from the music (Demucs), for timing |
+| `tools/vse_lyrics/forced_align.py` | Places known words on audio (wav2vec2 CTC alignment on onnxruntime) |
+| `tests/vse/test_vse.py` | `test_lyrics_align_corrects_to_sheet`, `test_lyric_layout`, `test_make_lyric_video`, `test_forced_align_path`, `test_timing_refinement_rules`, `test_clip_planning`, `test_sync_ticks` |
