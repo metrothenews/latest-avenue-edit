@@ -86,7 +86,7 @@ no Mac available) for a later session that runs on Sam's own computer.
 | macOS Apple Silicon build, `install_mac.command` | **Never run on an Apple Silicon Mac.** |
 | macOS Intel build | **Builds, installs and launches** on an Intel Mac (i9-9880H, macOS 26.7.3, Xcode 26.5) via `install_mac.command`, libraries self-built. No compile errors in our C++ under Apple Clang 21. The control server answers at 127.0.0.1:8792 after launch. Checked by eye on the Intel Mac by Sam ("looks great"): the list asked about was no splash, the "la" Dock icon, the two-pane layout, the game view HUD and the Automation panel showing the server URL. |
 | Windows build | Never attempted. No install script yet (see "Building on each kind of computer"). |
-| Releases | None published yet. |
+| Releases | **v0.1.0 draft** on GitHub with the Intel Mac file (`latest-avenue-video-macos-x64.zip`, built and checked on the Intel Mac). Apple Silicon and Windows files not yet built; publish once all three are attached. |
 | App icon | Made and wired in; not seen in a built Mac or Windows app. |
 | Web version of the game UI (`ui/`) | Routes tested; the page itself not opened in a browser against the editor. |
 
