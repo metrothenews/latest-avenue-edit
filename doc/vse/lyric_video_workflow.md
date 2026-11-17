@@ -244,20 +244,37 @@ found (it looks hand-set); 48 % is their average.
    as the references do).
 4. **Clip within the subject**: long enough for its slot, from the collection used least so
    far, then a seeded random choice. Never a clip an earlier video used.
+5. **Footage rules.** Every clip is measured once with ffmpeg (cached in `clip_catalog.json`
+   next to the `--used` file; about 90 s for 727 clips):
+   - **fills the frame**: clips with black bars baked in (`fill` below `--min-fill`, default
+     0.9) are passed over. 108 of the 727 Culture Clips have such bars and showed as a small
+     band inside the 3:4 picture;
+   - **dark enough behind the lyrics**: average brightness of the area the text sits on must
+     be at most `--max-text-brightness` (default 100 of 255). With no outline, as in the
+     references, white text over a bright clip cannot be read; the references use night
+     footage for the same reason.
+
+   A subject with no clip that passes hands its slot to the subject with the most that do
+   (the plan notes "wanted transit, none that fits"). Only when no subject has one are the
+   rules dropped, brightness first. `fireworks` and `transit` are small folders with many
+   barred or bright clips, so they lose slots most often.
 
 The report (`--report`) lists the quota, the plan and the subject of every cut. The `--used`
 file is now `{"videos": {name: [clips]}}`, so rebuilding one video frees its old clips.
 
-### Where this stopped
+### State of Assignment 17 (18 November 2026)
 
-- The three Assignment 17 videos were rebuilt with all of the above just before the session
-  ended (the build finished without errors); outputs in `/Volumes/Leverett/latest-avenue-edit-working/assignment17/out/`
-  (`out/review/` holds the tick copies, `out/v1_first_pass/` the first versions).
-  **Not yet looked at frame by frame, and not listened to.** Check the contact sheets and
-  the tick copies first.
+- The three videos are rebuilt with everything above and checked: 1080 × 1920, 30 fps,
+  H.264 + AAC, 3:4 picture with 240 px bars, every lyric word on screen, 24 different clips,
+  all filling the frame and dark enough behind the text. Frames were looked at by Claude.
+  **Nobody has listened to them**: play the tick copies in `out/review/` first.
+- Outputs: `/Volumes/Leverett/latest-avenue-edit-working/assignment17/out/`. Earlier rounds
+  are kept in `out/v1_first_pass/` and `out/v2_before_footage_rules/`.
+- Known: videos 1 and 3 each contain a cyan-water clip from what looks like the same scene
+  (different files, so the no-repeat rule allows it). Clips are not compared by content.
 - `tests/vse/test_vse.py`: 20 of 20 pass, including the timing rules (with a stand-in model),
-  the alignment path search, clip planning and the tick tool. Running the real alignment
-  model is not part of the test suite (it needs the 380 MB download).
+  the alignment path search, clip planning with the footage rules, and the tick tool.
+  Running the real alignment model is not part of the test suite (380 MB download).
 - Models and both Python environments are on the removable drive
   (`.../latest-avenue-edit-working/{models,lyrics-env,stems-env}`), not in the repository.
 
@@ -267,8 +284,8 @@ file is now `{"videos": {name: [clips]}}`, so rebuilding one video frees its old
   make 2026 feel like..."); the Assignment 17 brief gave no caption text, so none is added.
 - **No look pass on the clips** (the examples' footage has a VHS feel; the library clips are
   used as they are). The Color pass / LUT tools apply if wanted.
-- **Clips are picked by subject folder and length only**, not by what is in them. Check the
-  contact sheet.
+- **Clips are picked by subject folder, length, fill and brightness**, not by what is in
+  them: two clips of the same scene can end up in different videos. Check the contact sheet.
 - **One-click button in the app.** The tools exist; there is no panel for them yet.
 - Timing has not been checked by a person listening (use the tick copies).
 

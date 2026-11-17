@@ -37,29 +37,77 @@ def find_clips(library, skip_folders=("example videos",)):
     return by_category
 
 
-def clip_durations(paths, cache_path=None):
-    """-> {path: seconds}. Probed with ffprobe (or by loading the clip in the editor when
-    ffprobe is not installed) and remembered in `cache_path`."""
-    import shutil
+# Where the lyric text sits, as a share of a clip's own frame (x0, y0, x1, y1 from the top
+# left), for clips that fill a 3:4 picture: the block is the middle 48 % of the frame width
+# and starts 16 % down the picture, up to four rows tall.
+TEXT_AREA = (0.27, 0.15, 0.73, 0.50)
+
+
+def analyse_clip(path, ffmpeg):
+    """-> {"seconds", "fill", "text_luma"} measured with ffmpeg.
+
+    ``fill``: share of the frame the picture really covers (clips with black bars baked in
+    are below 1). ``text_luma``: average brightness, 0-255, of the area the lyrics sit on.
+    """
+    import re
     import subprocess
+    x0, y0, x1, y1 = TEXT_AREA
+    graph = ("split[a][b];[a]cropdetect=limit=24:round=2:reset=0[c];"
+             "[b]crop=iw*{:.3f}:ih*{:.3f}:iw*{:.3f}:ih*{:.3f},signalstats,metadata=print:key=lavfi.signalstats.YAVG[d];"
+             "[c][d]hstack=shortest=1:inputs=2".format(x1 - x0, y1 - y0, x0, y0))
+    # hstack needs equal heights; scale both small first.
+    graph = ("split[a][b];[a]cropdetect=limit=24:round=2:reset=0,scale=64:64[c];"
+             "[b]crop=iw*{:.3f}:ih*{:.3f}:iw*{:.3f}:ih*{:.3f},signalstats,"
+             "metadata=print:key=lavfi.signalstats.YAVG,scale=64:64[d];[c][d]hstack".format(
+                 x1 - x0, y1 - y0, x0, y0))
+    out = subprocess.run([ffmpeg, "-hide_banner", "-i", path, "-an", "-filter_complex", graph,
+                          "-f", "null", "-"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                         text=True, errors="replace").stdout
+    info = {"seconds": 0.0, "fill": 1.0, "text_luma": None}
+    m = re.search(r"Duration: (\d+):(\d+):([\d.]+)", out)
+    if m:
+        info["seconds"] = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
+    size = re.search(r"Video:.*?, (\d{2,5})x(\d{2,5})", out)
+    crops = re.findall(r"crop=(\d+):(\d+):\d+:\d+", out)
+    if size and crops:
+        w, h = (int(v) for v in crops[-1])
+        info["fill"] = round(min(1.0, (w * h) / (int(size.group(1)) * int(size.group(2)))), 3)
+    luma = [float(v) for v in re.findall(r"lavfi\.signalstats\.YAVG=([\d.]+)", out)]
+    if luma:
+        info["text_luma"] = round(sum(luma) / len(luma), 1)
+    return info
+
+
+def clip_catalog(paths, cache_path=None):
+    """-> {path: {"seconds", "fill", "text_luma"}}, remembered in `cache_path`.
+
+    Measured with ffmpeg, several clips at a time. Without ffmpeg only the length is known
+    (found by loading the clip in the editor), and the fill and brightness rules are skipped.
+    """
+    import shutil
+    from concurrent.futures import ThreadPoolExecutor
     cache = {}
     if cache_path and os.path.exists(cache_path):
         with open(cache_path, encoding="utf-8") as fh:
             cache = json.load(fh)
-    ffprobe = shutil.which("ffprobe")
-    missing = [p for p in paths if p not in cache]
-    for path in missing:
-        if ffprobe:
-            out = subprocess.run([ffprobe, "-v", "error", "-show_entries", "format=duration",
-                                  "-of", "csv=p=0", path], stdout=subprocess.PIPE, text=True).stdout.strip()
-            cache[path] = float(out) if out else 0.0
-        else:
-            import bpy
-            scene = bpy.context.scene
-            if scene.sequence_editor is None:
-                scene.sequence_editor_create()
+    # Older cache files hold only the length, as a number.
+    cache = {p: (v if isinstance(v, dict) else {"seconds": v, "fill": None, "text_luma": None})
+             for p, v in cache.items()}
+    ffmpeg = shutil.which("ffmpeg")
+    missing = [p for p in paths if p not in cache or (ffmpeg and cache[p].get("fill") is None)]
+    if missing and ffmpeg:
+        with ThreadPoolExecutor(max_workers=max(2, (os.cpu_count() or 4) // 2)) as pool:
+            for path, info in zip(missing, pool.map(lambda p: analyse_clip(p, ffmpeg), missing)):
+                cache[path] = info
+    elif missing:
+        import bpy
+        scene = bpy.context.scene
+        if scene.sequence_editor is None:
+            scene.sequence_editor_create()
+        for path in missing:
             strip = scene.sequence_editor.strips.new_movie(name="probe", filepath=path, channel=1, frame_start=1)
-            cache[path] = strip.frame_duration / (scene.render.fps / scene.render.fps_base)
+            cache[path] = {"seconds": strip.frame_duration / (scene.render.fps / scene.render.fps_base),
+                           "fill": None, "text_luma": None}
             scene.sequence_editor.strips.remove(strip)
     if cache_path and missing:
         with open(cache_path, "w", encoding="utf-8") as fh:
@@ -115,7 +163,7 @@ def subject_order(quota, first=None):
 
 
 def plan_clips(library, slots, seed, used=(), weights=None, first="people", durations_cache=None,
-               earlier_subjects=None):
+               earlier_subjects=None, min_fill=0.9, max_text_luma=100.0):
     """Choose one clip for every slot, by subject.
 
     :arg slots: [(start, end), ...] in seconds (`lyric_video.plan_cuts`).
@@ -124,17 +172,27 @@ def plan_clips(library, slots, seed, used=(), weights=None, first="people", dura
 
     1. Subjects are the names of the folders the clips sit in (people, cars, urban, ...).
     2. `subject_quotas` decides how many slots each subject gets, `subject_order` where.
-    3. Within a subject, the clip must be long enough for its slot; among those, the
-       collection (the folder above the subject) used least so far is preferred, then a
-       seeded random choice. A subject with no clip long enough hands the slot to the
-       subject with the most clips left that fit.
+    3. Within a subject, the clip must be long enough for its slot, fill the frame (no black
+       bars baked in: `min_fill`) and be dark enough where the lyrics sit to read them
+       (`max_text_luma`, 0-255). Among those, the collection (the folder above the subject)
+       used least so far is preferred, then a seeded random choice.
+    4. A subject with no such clip hands its slot to the subject with the most clips left
+       that do pass (noted in the plan). Only when no subject has one are the rules dropped,
+       first brightness, then fill.
     """
     rng = random.Random(seed)
     used = set(used)
     library_clips = find_clips(library)
     available = {s: [p for p in paths if p not in used] for s, paths in library_clips.items()}
     available = {s: paths for s, paths in available.items() if paths}
-    durations = clip_durations(sorted(p for paths in available.values() for p in paths), durations_cache)
+    catalog = clip_catalog(sorted(p for paths in available.values() for p in paths), durations_cache)
+    durations = {p: info["seconds"] for p, info in catalog.items()}
+
+    def fills(path):
+        return catalog[path].get("fill") is None or catalog[path]["fill"] >= min_fill
+
+    def readable(path):
+        return catalog[path].get("text_luma") is None or catalog[path]["text_luma"] <= max_text_luma
     subjects = sorted(available)
     quota = subject_quotas(subjects, len(slots), weights or {}, earlier_subjects)
     order = subject_order(quota, first)
@@ -149,19 +207,31 @@ def plan_clips(library, slots, seed, used=(), weights=None, first="people", dura
     for (start, end), subject in zip(slots, order):
         needed = end - start + 0.05
 
-        def fitting(name):
-            return [p for p in available.get(name, ()) if durations[p] >= needed]
-        choice, wanted = subject, subject
-        if not fitting(subject):
-            others = [s for s in subjects if fitting(s) and (not rows or s != rows[-1]["subject"])] or \
-                     [s for s in subjects if fitting(s)]
-            if not others:
-                clips.append(None)
-                rows.append({"start": start, "end": end, "subject": subject, "clip": None,
-                             "note": "no clip long enough; the builder will cut this slot in two"})
+        def fitting(name, strict=0):
+            """Clips of a subject long enough for the slot; strict 2 = all rules, 1 = fill only."""
+            return [p for p in available.get(name, ()) if durations[p] >= needed and
+                    (strict < 1 or fills(p)) and (strict < 2 or readable(p))]
+        # The wanted subject if it has a clip that passes every rule; else another subject
+        # that has one (not the previous slot's subject, if that can be avoided); only when
+        # no subject has one are the rules dropped: first brightness, then fill.
+        wanted, choice, relaxed, candidates = subject, None, None, []
+        for strict, why in ((2, None), (1, "no clip dark enough for the text"),
+                            (0, "no clip that fills the frame")):
+            able = [s for s in subjects if fitting(s, strict)]
+            if not able:
                 continue
-            choice = max(others, key=lambda s: (len(fitting(s)), s))
-        candidates = fitting(choice)
+            if wanted in able:
+                choice = wanted
+            else:
+                others = [s for s in able if not rows or s != rows[-1]["subject"]] or able
+                choice = max(others, key=lambda s: (len(fitting(s, strict)), s))
+            candidates, relaxed = fitting(choice, strict), why
+            break
+        if choice is None:
+            clips.append(None)
+            rows.append({"start": start, "end": end, "subject": subject, "clip": None,
+                         "note": "no clip long enough; the builder will cut this slot in two"})
+            continue
         least = min(collection_use.get(collection(p), 0) for p in candidates)
         candidates = sorted(p for p in candidates if collection_use.get(collection(p), 0) == least)
         path = rng.choice(candidates)
@@ -170,11 +240,17 @@ def plan_clips(library, slots, seed, used=(), weights=None, first="people", dura
         clips.append(path)
         row = {"start": round(start, 3), "end": round(end, 3), "subject": choice,
                "collection": collection(path), "clip": path, "clip_seconds": round(durations[path], 2)}
+        row["fill"], row["text_luma"] = catalog[path].get("fill"), catalog[path].get("text_luma")
+        notes = []
         if choice != wanted:
-            row["note"] = "wanted {:s}, none long enough".format(wanted)
+            notes.append("wanted {:s}, none that fits".format(wanted))
+        if relaxed:
+            notes.append(relaxed)
+        if notes:
+            row["note"] = "; ".join(notes)
         rows.append(row)
     # Spare clips for slots the builder has to cut in two.
-    spare = [p for s in subjects for p in available[s]]
+    spare = [p for s in subjects for p in available[s] if fills(p) and readable(p)]
     rng.shuffle(spare)
     return [c for c in clips if c] + spare[:12], rows, quota
 
@@ -194,7 +270,12 @@ def main():
                         help="share of the slots per subject folder, e.g. people=2,cars=1.5 "
                              "(subjects not named count 1)")
     parser.add_argument("--first", default="people", help="subject of the opening clip")
-    parser.add_argument("--catalog", help="JSON file caching clip lengths (default: next to --used)")
+    parser.add_argument("--catalog", help="JSON file caching clip measurements (default: next to --used)")
+    parser.add_argument("--min-fill", type=float, default=0.9,
+                        help="skip clips whose picture covers less than this share of their frame "
+                             "(black bars baked in); 0 to allow all")
+    parser.add_argument("--max-text-brightness", type=float, default=100.0,
+                        help="skip clips brighter than this (0-255) where the lyrics sit; 255 to allow all")
     parser.add_argument("--style", default="{}", help="JSON overrides for lyric_video.STYLE")
     parser.add_argument("--report", help="write what was built to this JSON file")
     parser.add_argument("--sync-check", help="also export a review copy to this MP4, with a tick "
@@ -226,10 +307,10 @@ def main():
         for path in used:
             subject = os.path.basename(os.path.dirname(path))
             earlier[subject] = earlier.get(subject, 0) + 1
-        catalog = args.catalog or (os.path.join(os.path.dirname(os.path.abspath(args.used)), "clip_lengths.json")
+        catalog = args.catalog or (os.path.join(os.path.dirname(os.path.abspath(args.used)), "clip_catalog.json")
                                    if args.used else None)
         clips, plan, quota = plan_clips(args.library, slots, args.seed, used, weights, args.first,
-                                        catalog, earlier)
+                                        catalog, earlier, args.min_fill, args.max_text_brightness)
 
     result = api.call("make_lyric_video", {
         "audio": args.audio, "lyrics": args.lyrics, "clips": clips,

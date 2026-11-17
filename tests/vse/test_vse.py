@@ -396,7 +396,7 @@ def test_clip_planning():
                 lengths[path] = 1.0 if subject == "fireworks" else 2.0 + n
     cache = os.path.join(TMP, "clip_lengths.json")
     with open(cache, "w", encoding="utf-8") as fh:
-        json.dump(lengths, fh)
+        json.dump({p: {"seconds": v, "fill": 1.0, "text_luma": 50.0} for p, v in lengths.items()}, fh)
 
     quota = mk.subject_quotas(subjects, 8, {"people": 2.0})
     assert sum(quota.values()) == 8 and min(quota.values()) >= 1 and quota["people"] == 3, quota
@@ -416,6 +416,7 @@ def test_clip_planning():
     assert rows[0]["subject"] == "people"
     assert all(a["subject"] != b["subject"] for a, b in zip(rows, rows[1:])), rows
     assert "fireworks" not in {row["subject"] for row in rows}  # too short: slot handed on, with a note
+    assert any("wanted fireworks" in row.get("note", "") for row in rows)
     assert any("note" in row for row in rows)
     used_collections = [row["collection"] for row in rows]
     assert abs(used_collections.count("collection-1") - used_collections.count("collection-2")) <= 2
@@ -423,6 +424,38 @@ def test_clip_planning():
     assert [r["clip"] for r in mk.plan_clips(library, slots, 1, (), {"people": 2.0}, "people", cache)[1]] == chosen
     again = [r["clip"] for r in mk.plan_clips(library, slots, 2, chosen, {"people": 2.0}, "people", cache)[1]]
     assert not set(again) & set(chosen)
+    # Clips with black bars baked in, or too bright behind the text, are passed over.
+    measured = {p: {"seconds": v, "fill": 1.0, "text_luma": 50.0} for p, v in lengths.items()}
+    barred = {p for p in lengths if p.endswith(("c5.mp4", "p5.mp4"))}
+    bright = {p for p in lengths if p.endswith(("u4.mp4", "u5.mp4", "t5.mp4"))}
+    for p in barred:
+        measured[p]["fill"] = 0.6
+    for p in bright:
+        measured[p]["text_luma"] = 180.0
+    cache2 = os.path.join(TMP, "clip_catalog.json")
+    with open(cache2, "w", encoding="utf-8") as fh:
+        json.dump(measured, fh)
+    for seed in range(1, 6):
+        rows = mk.plan_clips(library, slots, seed, (), {"people": 2.0}, "people", cache2)[1]
+        assert not {r["clip"] for r in rows} & (barred | bright), rows
+    # A subject with nothing dark enough still gets its slot, with a note.
+    for p in measured:
+        if os.path.basename(os.path.dirname(p)) == "urban":
+            measured[p]["text_luma"] = 180.0
+    with open(cache2, "w", encoding="utf-8") as fh:
+        json.dump(measured, fh)
+    rows = mk.plan_clips(library, slots, 1, (), {"people": 2.0}, "people", cache2)[1]
+    # A subject with nothing dark enough hands its slot to one that has, with a note.
+    assert "urban" not in {r["subject"] for r in rows}, rows
+    handed = [r for r in rows if "wanted urban" in r.get("note", "")]
+    assert len(handed) == 1 and all(r["text_luma"] <= 100 and r["fill"] >= 0.9 for r in rows), rows
+    # Only when no subject has a clip that passes are the rules dropped.
+    for p in measured:
+        measured[p]["text_luma"] = 180.0
+    with open(cache2, "w", encoding="utf-8") as fh:
+        json.dump(measured, fh)
+    rows = mk.plan_clips(library, slots, 1, (), {"people": 2.0}, "people", cache2)[1]
+    assert all("no clip dark enough for the text" in r.get("note", "") and r["fill"] >= 0.9 for r in rows), rows
 
 
 @test
