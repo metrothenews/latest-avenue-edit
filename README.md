@@ -31,6 +31,9 @@ gh release download --repo metrothenews/latest-avenue-edit --pattern "*macos-x64
 Mac: unzip, drag the app into Applications, and the first time right-click it > **Open** (it
 is not signed with an Apple Developer ID yet). Windows: unzip anywhere and run `blender.exe`
 (SmartScreen: **More info > Run anyway**). Needs macOS 13 or Windows 10 or newer.
+The Mac app draws with Metal; each build is only known to work on the machine it was built
+and checked on, so other models (especially other graphics chips) are untested until opened.
+The repo is private: downloading needs a GitHub account with access, or send the zip.
 
 ## Install or update from source on a Mac
 
