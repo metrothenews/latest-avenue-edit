@@ -250,8 +250,8 @@ file is now `{"videos": {name: [clips]}}`, so rebuilding one video frees its old
 
 ### Where this stopped
 
-- The three Assignment 17 videos were being rebuilt with all of the above when the session
-  ended; outputs in `/Volumes/Leverett/latest-avenue-edit-working/assignment17/out/`
+- The three Assignment 17 videos were rebuilt with all of the above just before the session
+  ended (the build finished without errors); outputs in `/Volumes/Leverett/latest-avenue-edit-working/assignment17/out/`
   (`out/review/` holds the tick copies, `out/v1_first_pass/` the first versions).
   **Not yet looked at frame by frame, and not listened to.** Check the contact sheets and
   the tick copies first.
