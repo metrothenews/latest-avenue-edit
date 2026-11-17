@@ -117,3 +117,8 @@ release/vse/** -filter -diff -merge
 release/darwin/Blender.app/Contents/Resources/la.icns -filter -diff -merge
 scripts/modules/vse_standalone/** -filter -diff -merge
 scripts/startup/bl_app_templates_system/Video_Editing/startup.blend -filter -diff -merge
+
+# Files that run inside the Linux container keep Unix line endings on Windows checkouts.
+cloud/*.sh text eol=lf
+cloud/*.py text eol=lf
+cloud/Dockerfile text eol=lf

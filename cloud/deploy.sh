@@ -46,27 +46,25 @@ command -v gcloud >/dev/null || { echo "Install the gcloud CLI first: https://cl
 gcloud auth list --filter=status:ACTIVE --format='value(account)' | grep -q . || { echo "Sign in first: gcloud auth login"; exit 1; }
 
 step "Staging the editor"
+# The staging folder mirrors what cloud/Dockerfile copies from the repository root.
 if [ -n "${APP_DIR:-}" ]; then
-  cp -R "$APP_DIR" "$STAGE/app"
+  mkdir "$STAGE/pack" && cp -R "$APP_DIR" "$STAGE/pack/app"
+  tar -cJf "$STAGE/$RELEASE_FILE" -C "$STAGE/pack" app && rm -rf "$STAGE/pack"
 elif [ -n "${APP_TARBALL:-}" ]; then
-  tar -xJf "$APP_TARBALL" -C "$STAGE"
+  cp "$APP_TARBALL" "$STAGE/$RELEASE_FILE"
+elif [ -f "$REPO/$RELEASE_FILE" ]; then
+  cp "$REPO/$RELEASE_FILE" "$STAGE/$RELEASE_FILE"
 else
-  command -v gh >/dev/null || { echo "Install the gh CLI, or pass APP_DIR=<a Linux build's bin folder>"; exit 1; }
+  command -v gh >/dev/null || { echo "Install the gh CLI, or pass APP_TARBALL=<the Linux build file>"; exit 1; }
   gh release download --repo metrothenews/latest-avenue-edit --pattern "$RELEASE_FILE" --dir "$STAGE"
-  tar -xJf "$STAGE/$RELEASE_FILE" -C "$STAGE"
-  rm "$STAGE/$RELEASE_FILE"
 fi
-[ -x "$STAGE/app/blender" ] || { echo "No Linux build found in the staging folder"; exit 1; }
-# Lay this checkout's Python over the build, so changes to the game view, tools and control
-# server deploy without recompiling (C/C++ changes need a new Linux build).
-VERSION_DIR="$(find "$STAGE/app" -maxdepth 1 -type d -name '[0-9]*.[0-9]*' | head -1)"
-cp -R "$REPO/scripts/modules/vse_standalone/." "$VERSION_DIR/scripts/modules/vse_standalone/"
-cp "$REPO/scripts/startup/vse_standalone_startup.py" "$VERSION_DIR/scripts/startup/"
-cp -R "$REPO/scripts/startup/bl_app_templates_system/Video_Editing/." \
-  "$VERSION_DIR/scripts/startup/bl_app_templates_system/Video_Editing/"
-mkdir -p "$STAGE/cloud"
+mkdir -p "$STAGE/cloud" "$STAGE/scripts/modules" "$STAGE/scripts/startup/bl_app_templates_system"
 cp "$REPO/cloud/Dockerfile" "$REPO/cloud/start.sh" "$REPO/cloud/editor.sh" "$REPO/cloud/gateway.py" "$STAGE/cloud/"
-git -C "$REPO" rev-parse --short HEAD > "$STAGE/cloud/VERSION"
+cp -R "$REPO/scripts/modules/vse_standalone" "$STAGE/scripts/modules/"
+cp "$REPO/scripts/startup/vse_standalone_startup.py" "$STAGE/scripts/startup/"
+cp -R "$REPO/scripts/startup/bl_app_templates_system/Video_Editing" "$STAGE/scripts/startup/bl_app_templates_system/"
+find "$STAGE" -name __pycache__ -type d -prune -exec rm -rf {} +
+git -C "$REPO" rev-parse --short HEAD > "$STAGE/VERSION"
 
 step "Google Cloud project: $PROJECT"
 gcloud config set project "$PROJECT" >/dev/null
@@ -76,7 +74,7 @@ step "Image"
 gcloud artifacts repositories describe "$REPOSITORY" --location "$REGION" >/dev/null 2>&1 || \
   gcloud artifacts repositories create "$REPOSITORY" --repository-format docker --location "$REGION" \
     --description "latest avenue video, cloud editor"
-IMAGE="$REGION-docker.pkg.dev/$PROJECT/$REPOSITORY/editor:$(cat "$STAGE/cloud/VERSION")"
+IMAGE="$REGION-docker.pkg.dev/$PROJECT/$REPOSITORY/editor:$(cat "$STAGE/VERSION")"
 cat > "$STAGE/cloudbuild.yaml" <<EOF
 steps:
 - name: gcr.io/cloud-builders/docker

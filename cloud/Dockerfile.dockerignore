@@ -1,0 +1,10 @@
+# Only what cloud/Dockerfile copies is sent to the build.
+*
+!latest-avenue-video-linux-x64.tar.xz
+!cloud/start.sh
+!cloud/editor.sh
+!cloud/gateway.py
+!scripts/modules/vse_standalone
+!scripts/startup/vse_standalone_startup.py
+!scripts/startup/bl_app_templates_system/Video_Editing
+**/__pycache__

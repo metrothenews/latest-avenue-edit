@@ -18,6 +18,8 @@ Cloud Run service, 0 or 1 instance        (this folder)
   /data          Cloud Storage bucket: projects, media, renders
 ```
 
+To use **your own Windows PC** as the server instead of Google Cloud, see [pc/README.md](pc/README.md): the same container, run by Docker Desktop.
+
 ## Who can use it
 
 The page at `/edit` is hidden from everyone but the owner, but that is only the browser.
@@ -102,8 +104,11 @@ start. A project saved under its own name is saved in place instead.
 
 ## Run it locally
 
+Put `latest-avenue-video-linux-x64.tar.xz` next to the repository's README, then from the
+repository root:
+
 ```bash
-docker build -f cloud/Dockerfile -t la-edit <staging folder with app/ and cloud/>
+docker build -f cloud/Dockerfile -t latest-avenue-edit .
 ```
 
 `tests/vse/test_cloud_gateway.py` explains how to run the gateway with test certificates
