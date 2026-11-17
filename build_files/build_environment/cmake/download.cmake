@@ -6,6 +6,9 @@
 set(BLENDER_VERSION 5.3)
 
 function(download_source dep)
+  if(VSE_DEPS_ONLY AND dep IN_LIST VSE_DEPS_SKIP_DOWNLOAD)
+    return()
+  endif()
   set(TARGET_FILE ${${dep}_FILE})
   set(TARGET_HASH_TYPE ${${dep}_HASH_TYPE})
   set(TARGET_HASH ${${dep}_HASH})

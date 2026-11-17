@@ -39,13 +39,15 @@ LIBS = (
 )
 
 
+# Platforms without precompiled libraries (see BUILDING_VSE.md).
+SELF_BUILT = {"macos_x64"}
+
+
 def current_platform():
     machine = platform.machine().lower()
     arch = "arm64" if machine in {"arm64", "aarch64"} else "x64"
     if sys.platform == "darwin":
-        if arch == "x64":
-            sys.exit("Intel macOS has no precompiled libraries in Blender 5.x, see BUILDING_VSE.md")
-        return "macos_arm64"
+        return "macos_" + arch
     if sys.platform == "win32":
         return "windows_" + arch
     return "linux_" + arch
@@ -76,20 +78,24 @@ def main():
     tag = args.tag or blender_version_tag()
     dest = os.path.join(ROOT, "lib", plat)
 
-    if not os.path.isdir(os.path.join(dest, ".git")):
-        if os.path.isdir(dest) and os.listdir(dest):
-            sys.exit("{:s} exists and is not a git checkout".format(dest))
-        if os.path.isdir(dest):
-            os.rmdir(dest)
-        env_skip = dict(os.environ, GIT_LFS_SKIP_SMUDGE="1")
-        print("+ git clone", LIB_URL.format(plat), dest, flush=True)
-        subprocess.check_call(
-            ["git", "clone", "--depth", "1", "--branch", tag, LIB_URL.format(plat), dest],
-            env=env_skip)
+    if plat in SELF_BUILT:
+        # Blender 5.x publishes no Intel macOS libraries; build_libs_macos_x64.sh builds them.
+        print("{:s}: libraries are built locally, fetching source-tree files only".format(plat))
+    else:
+        if not os.path.isdir(os.path.join(dest, ".git")):
+            if os.path.isdir(dest) and os.listdir(dest):
+                sys.exit("{:s} exists and is not a git checkout".format(dest))
+            if os.path.isdir(dest):
+                os.rmdir(dest)
+            env_skip = dict(os.environ, GIT_LFS_SKIP_SMUDGE="1")
+            print("+ git clone", LIB_URL.format(plat), dest, flush=True)
+            subprocess.check_call(
+                ["git", "clone", "--depth", "1", "--branch", tag, LIB_URL.format(plat), dest],
+                env=env_skip)
 
-    run(["git", "lfs", "install", "--local"], cwd=dest)
-    include = ",".join(name + "/**" for name in LIBS)
-    run(["git", "lfs", "pull", "--include=" + include], cwd=dest)
+        run(["git", "lfs", "install", "--local"], cwd=dest)
+        include = ",".join(name + "/**" for name in LIBS)
+        run(["git", "lfs", "pull", "--include=" + include], cwd=dest)
 
     # Source-tree LFS files (startup.blend, icons, fonts, ...), excluding test data.
     run(["git", "config", "lfs.url", SOURCE_LFS_URL], cwd=ROOT)

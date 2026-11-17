@@ -9,7 +9,7 @@ switched off at build time. This file covers building it on every platform.
 | Linux arm64 | Should work, not yet built | Blender's precompiled `lib/linux_arm64` |
 | macOS Apple Silicon | Should work, not yet built | Blender's precompiled `lib/macos_arm64` |
 | Windows x64 / arm64 | Should work, not yet built | Blender's precompiled `lib/windows_x64` / `windows_arm64` |
-| macOS Intel | Needs self-built libraries (below) | Built with `make deps` on an Intel Mac |
+| macOS Intel | Build in progress (libraries not yet built) | Self-built `lib/macos_x64` (section 5) |
 
 Everything we added on top of Blender is either C++ inside Blender's existing modules (built
 the same way on every platform) or Python using only the standard library, so the platforms
@@ -96,18 +96,21 @@ starts the editor with its control server and drives it through the MCP bridge.
 
 Blender 5.x no longer publishes Intel macOS libraries, and the last ones (Blender 4.5) are a
 generation behind what this source needs (Python 3.11 vs 3.13, FFmpeg 7 vs 8), so they
-can't be used without patching the engine. Instead, build the same library versions from
-source on an Intel Mac with Blender's own dependency builder:
+can't be used without patching the engine. Instead the same library versions are built from
+source on the Intel Mac with Blender's own dependency builder, limited to what the video
+editor uses. `install_mac.command` does this on its own the first time (several hours);
+to run only that step:
 
 ```bash
-cd blender
-make deps            # several hours; produces lib/macos_x64
+build_files/vse/build_libs_macos_x64.sh
 ```
 
-Then build as in step 3. `make deps` only needs re-running when the library versions change
-(on a Blender upgrade), so keep the resulting `lib/macos_x64` folder.
-To keep it short, `build_files/build_environment` can be limited to the libraries listed in
-`build_files/vse/fetch_libs.py`.
+It configures `build_files/build_environment` with `-DVSE_DEPS_ONLY=ON`, which skips the
+libraries listed in `build_files/vse/deps_vse.cmake` (3D, rendering, simulation and other
+platforms' GPU libraries; keep that list in step with `vse_standalone.cmake`). It compiles in
+`../latest-avenue-video-deps` and installs to `lib/macos_x64`; running it again resumes. Both
+only need rebuilding when the library versions change (a Blender upgrade). Tool and Xcode
+notes from the first Intel build are in README.md, "Building on each kind of computer".
 
 ## 6. Linux on any distribution
 

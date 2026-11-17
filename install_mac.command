@@ -33,10 +33,19 @@ say_step "Checking this Mac"
 
 [ "$(uname -s)" = "Darwin" ] || fail "this installer is for macOS."
 ARCH="$(uname -m)"
-if [ "$ARCH" != "arm64" ]; then
-  fail "this Mac has an Intel chip. Blender no longer publishes Intel Mac libraries, so they have to be built first (several hours). See section 5 of BUILDING_VSE.md."
-fi
+case "$ARCH" in
+  arm64) LIB_PLATFORM=macos_arm64 ;;
+  # Blender publishes no Intel Mac libraries; they are compiled here first (several hours,
+  # first run only). See section 5 of BUILDING_VSE.md.
+  x86_64) LIB_PLATFORM=macos_x64 ;;
+  *) fail "unknown processor $ARCH." ;;
+esac
 
+# Xcode may be installed but not selected (xcode-select still pointing at the Command Line
+# Tools, which needs a password to change); use it directly in that case.
+if ! xcodebuild -version >/dev/null 2>&1 && [ -d /Applications/Xcode.app/Contents/Developer ]; then
+  export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+fi
 if ! xcodebuild -version >/dev/null 2>&1; then
   fail "Xcode is needed to compile the app. Install Xcode from the App Store, open it once to accept the license, then run this again."
 fi
@@ -52,6 +61,18 @@ MISSING=""
 for tool in cmake ninja git-lfs; do
   command -v "$tool" >/dev/null 2>&1 || MISSING="$MISSING $tool"
 done
+if [ "$LIB_PLATFORM" = "macos_x64" ]; then
+  # Tools for compiling the libraries (build_environment/cmake/check_software.cmake).
+  BREW_PREFIX="$(brew --prefix)"
+  # (meson is not needed: the dependency builder installs its own into its Python.)
+  for tool in autoconf automake dos2unix glibtoolize pkg-config yasm; do
+    command -v "$tool" >/dev/null 2>&1 || MISSING="$MISSING $tool"
+  done
+  MISSING="${MISSING/glibtoolize/libtool}"
+  MISSING="${MISSING/pkg-config/pkgconf}"
+  [ -x "$BREW_PREFIX/opt/bison/bin/bison" ] || MISSING="$MISSING bison"
+  [ -x "$BREW_PREFIX/opt/flex/bin/flex" ] || MISSING="$MISSING flex"
+fi
 if [ -n "$MISSING" ]; then
   say_step "Installing build tools:$MISSING"
   # shellcheck disable=SC2086
@@ -81,10 +102,16 @@ if [ "${VSE_NO_PULL:-0}" != "1" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-if [ -z "$(find lib/macos_arm64/ffmpeg -name 'libavcodec.a' -size +1000k 2>/dev/null)" ] || \
+if [ "$LIB_PLATFORM" = "macos_x64" ] && [ ! -d lib/macos_x64/.git ]; then
+  say_step "Compiling libraries for an Intel Mac (first run only: several hours)"
+  build_files/vse/build_libs_macos_x64.sh || \
+    fail "compiling the libraries failed. Send Claude the last lines of: $(dirname "$REPO")/latest-avenue-video-deps/deps.log"
+fi
+
+if [ -z "$(find "lib/$LIB_PLATFORM/ffmpeg" -name 'libavcodec.a' -size +1000k 2>/dev/null)" ] || \
    [ "$(wc -c < release/datafiles/startup.blend)" -lt 1024 ]; then
   say_step "Downloading libraries (about 1.5 GB, first run only)"
-  python3 build_files/vse/fetch_libs.py --platform macos_arm64
+  python3 build_files/vse/fetch_libs.py --platform "$LIB_PLATFORM"
 fi
 
 # ---------------------------------------------------------------------------

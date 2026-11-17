@@ -10,16 +10,40 @@ Claude can drive every step through MCP while a person can step in at any time.
 - The reel workflow the game view is being built toward: [doc/vse/reel_workflow.md](doc/vse/reel_workflow.md)
 - Blender's own README: [README_BLENDER.md](README_BLENDER.md)
 
-## Install or update on a Mac (Apple Silicon)
+## Install a finished version (no compiling)
 
-Needs Xcode (App Store) and Homebrew. Once:
+Each version is on the repo's **Releases** page, one file per kind of computer:
+
+| Computer | File |
+|---|---|
+| Mac with Apple Silicon (M1 or later) | `latest-avenue-video-macos-arm64.zip` |
+| Mac with an Intel chip | `latest-avenue-video-macos-x64.zip` |
+| Windows PC | `latest-avenue-video-windows-x64.zip` |
+
+The newest one is always at
+`https://github.com/metrothenews/latest-avenue-edit/releases/latest/download/<file>` (sign in to
+GitHub with an account that can see this private repo), or from Terminal:
+
+```bash
+gh release download --repo metrothenews/latest-avenue-edit --pattern "*macos-x64*"
+```
+
+Mac: unzip, drag the app into Applications, and the first time right-click it > **Open** (it
+is not signed with an Apple Developer ID yet). Windows: unzip anywhere and run `blender.exe`
+(SmartScreen: **More info > Run anyway**). Needs macOS 13 or Windows 10 or newer.
+
+## Install or update from source on a Mac
+
+Needs Xcode (App Store; on an Intel Mac, Xcode 26.x, since Xcode 27 is Apple Silicon only) and
+Homebrew. Once:
 
 ```bash
 GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 https://github.com/metrothenews/latest-avenue-edit ~/latest-avenue-edit
 ```
 
-Then double-click `install_mac.command`. First run: about 1.5 GB of downloads and 30–90
-minutes of compiling. **To update, run it again** (a few minutes). The app runs offline.
+Then double-click `install_mac.command`. First run on Apple Silicon: about 1.5 GB of
+downloads and 30–90 minutes of compiling. On an Intel Mac the libraries are compiled first
+(several more hours, once). **To update, run it again** (a few minutes). The app runs offline.
 
 ---
 
@@ -56,8 +80,10 @@ no Mac available) for a later session that runs on Sam's own computer.
 | Theme | Applies with every property resolving. Only seen in screenshots; needs a visual pass against latestavenue.com. |
 | Two-pane default layout | **Done**: game view left, timeline right, `F` full-screen; seen in screenshots on Linux. |
 | Startup | No Blender splash. On a machine without a working Vulkan driver a "Failed to load using Vulkan, using OpenGL" notice appears (seen on the GPU-less cloud machine); expected to be absent on real hardware, unverified. |
-| macOS build, `install_mac.command` | **Never run on a Mac.** |
-| Windows build | Never attempted. |
+| macOS Apple Silicon build, `install_mac.command` | **Never run on an Apple Silicon Mac.** |
+| macOS Intel build | **In progress** on an Intel Mac (i9, macOS 26.7, Xcode 26.5): build tools installed; libraries not yet built. `install_mac.command` Intel path, `build_files/vse/build_libs_macos_x64.sh` and `build_files/vse/deps_vse.cmake` written, not yet run through. |
+| Windows build | Never attempted. No install script yet (see "Building on each kind of computer"). |
+| Releases | None published yet. |
 | App icon | Made and wired in; not seen in a built Mac or Windows app. |
 | Web version of the game UI (`ui/`) | Routes tested; the page itself not opened in a browser against the editor. |
 
@@ -65,8 +91,8 @@ If a later commit message or this table says otherwise, trust the later one.
 
 ## Step 1: get it compiling and launching on this machine
 
-On an Apple Silicon Mac, run `./install_mac.command` from Terminal and fix what breaks. On
-other platforms follow [BUILDING_VSE.md](BUILDING_VSE.md).
+Follow the part of "Building on each kind of computer" below for the machine you are on, and
+fix what breaks.
 
 Likely first failures and where to look:
 
@@ -81,6 +107,74 @@ Likely first failures and where to look:
   installed app's `Contents/Resources` in `install_mac.command`, or regenerate it in Xcode.
 - **Configure errors about a missing library**: add its folder name to `LIBS` in
   `build_files/vse/fetch_libs.py` and run that script again.
+
+## Building on each kind of computer
+
+Three builds are wanted: Apple Silicon Mac, Intel Mac and Windows x64, each built on a
+machine of that kind (one build can't be made for another). Each one ends in a zip on the
+same GitHub release (see "Releasing a version"). Several machines can work at once: they all
+push to `main`, so `git pull --rebase` before every push, and keep commits small so the
+status table merges cleanly.
+
+Before starting on any machine, check prerequisites and say plainly what is missing rather
+than working around it.
+
+### Apple Silicon Mac (easiest)
+
+1. Xcode from the App Store, opened once (license accepted): `xcodebuild -version` works.
+   Homebrew installed. About 15 GB free.
+2. Clone as in "Install or update from source on a Mac", then run `./install_mac.command`
+   from Terminal in the background and check on it (first run 30–90 minutes).
+3. On a failure, read the log path it prints, fix the cause in our code (map at the end),
+   run it again: it resumes. Apple Clang is stricter than GCC; fixes found on the Intel Mac
+   apply here too, so `git pull --rebase` first.
+4. Run the tests (Step 2) and check by hand. Package as `latest-avenue-video-macos-arm64.zip`.
+
+### Intel Mac (slowest: libraries are compiled locally)
+
+Blender 5.x publishes no Intel Mac libraries, so `install_mac.command` compiles them first
+with `build_files/vse/build_libs_macos_x64.sh`, limited to what the video editor uses
+(`build_files/vse/deps_vse.cmake`). That takes several hours once; they go to
+`lib/macos_x64` and the build folder `~/latest-avenue-video-deps`. Keep both: they only need
+rebuilding when the library versions change (a Blender upgrade). Learned on the first Intel
+Mac:
+
+- **Xcode:** the App Store's Xcode 27 is Apple Silicon only. Download Xcode 26.x (universal)
+  from <https://developer.apple.com/download/all/>, then unpack with
+  `cd /Applications && xip --expand ~/Downloads/Xcode_26*.xip` and run
+  `sudo xcodebuild -license accept`. `install_mac.command` uses `/Applications/Xcode.app`
+  even when `xcode-select` still points at the Command Line Tools.
+- **Command Line Tools must be current too** (Homebrew refuses to build otherwise, and it
+  builds everything from source on Intel):
+  `sudo softwareupdate --install "Command Line Tools for Xcode 26.6-26.6"` (use the newest
+  label `softwareupdate --list` shows).
+- **Don't `brew install git-lfs` on Intel:** Homebrew compiles LLVM and Rust for it (hours).
+  Install the official binary from <https://github.com/git-lfs/git-lfs/releases> instead
+  (`git-lfs-darwin-amd64-*.zip`, check it against `sha256sums.asc`, copy `git-lfs` to
+  `/usr/local/bin`). `meson` from Homebrew isn't needed either.
+- If Homebrew stops with "directories are not writable", the folder it names can be
+  replaced by a copy you own (`mv dir dir.root-owned && mkdir dir && cp -pR dir.root-owned/. dir/`)
+  instead of using `sudo chown`.
+
+Then as for Apple Silicon from step 2. Package as `latest-avenue-video-macos-x64.zip`.
+
+### Windows x64 (never attempted)
+
+There is no install script for Windows yet; writing one (`install_windows.bat` next to
+`install_mac.command`, same steps and options) is part of this job.
+
+1. Prerequisites: Visual Studio 2022 with "Desktop development with C++", Git for Windows,
+   Git LFS (included with Git for Windows), CMake, Python 3, about 20 GB free. Check whether
+   the PC is x64 or ARM64 (`echo %PROCESSOR_ARCHITECTURE%`); the libraries differ.
+2. Clone with `GIT_LFS_SKIP_SMUDGE=1` as above (`set GIT_LFS_SKIP_SMUDGE=1` in cmd), then
+   `python build_files\vse\fetch_libs.py` (fetches `lib/windows_x64`, about 1.5 GB).
+3. Build as in [BUILDING_VSE.md](BUILDING_VSE.md) section 3 from an "x64 Native Tools Command
+   Prompt for VS 2022", with `-C build_files\cmake\config\vse_standalone.cmake`.
+4. Expect new compile errors from MSVC in our C++ (it differs from both GCC and Clang), and
+   Windows issues in the Python layer: file paths, launching processes and the control
+   server in `tests/vse/test_mcp_e2e.py` and `tools/vse_mcp/` have only run on Linux.
+5. Run the tests (Step 2; the binary is `bin\blender.exe`) and check by hand. Package the
+   `bin` folder as `latest-avenue-video-windows-x64.zip`.
 
 ## Step 2: run the tests and fix the Python layer
 
@@ -141,31 +235,39 @@ uploads its file to the same GitHub release.
 git tag "v$(cat VSE_VERSION)" && git push --no-verify origin main --tags
 ```
 
-3. Package the build from this machine:
+3. Package the build from this machine. File names carry no version number, so the
+   `releases/latest/download/<file>` links in "Install a finished version" always point at
+   the newest one (the version is in the release's tag and title):
 
-   - **macOS**: `ditto -c -k --keepParent "/Applications/latest avenue video.app" "latest-avenue-video-$(cat VSE_VERSION)-macos-arm64.zip"`
+   - **Mac, Apple Silicon**: `ditto -c -k --keepParent "/Applications/latest avenue video.app" latest-avenue-video-macos-arm64.zip`
+   - **Mac, Intel**: same command, named `latest-avenue-video-macos-x64.zip`.
      The app is only ad-hoc signed: on another Mac, right-click > Open the first time (or
      `xattr -dr com.apple.quarantine` on the app). Proper signing and notarization need an
      Apple Developer ID and are not set up.
-   - **Windows**: zip the `bin` folder of the build as `latest-avenue-video-<version>-windows-x64.zip`.
-   - **Linux**: `tar -cJf latest-avenue-video-<version>-linux-x64.tar.xz -C <build> bin`
+   - **Windows**: zip the `bin` folder of the build as `latest-avenue-video-windows-x64.zip`.
+   - **Linux**: `tar -cJf latest-avenue-video-linux-x64.tar.xz -C <build> bin`
      (build on Rocky Linux 8 for it to run on every distribution).
 
-4. Create the release, or add this machine's file to it if it exists:
+4. The first machine creates the release as a **draft**, so the "latest" links keep pointing
+   at the previous complete release meanwhile; each other machine adds its file:
 
 ```bash
-gh release create "v$(cat VSE_VERSION)" latest-avenue-video-*.zip --title "v$(cat VSE_VERSION)" --notes "what changed"
+gh release create "v$(cat VSE_VERSION)" latest-avenue-video-*.zip --draft --title "v$(cat VSE_VERSION)" --notes "what changed"
 ```
 
 ```bash
 gh release upload "v$(cat VSE_VERSION)" latest-avenue-video-*.zip
 ```
 
-5. To install a release on another machine: download the file for that platform from the
-   repo's Releases page and unzip it. No compiling, works offline.
+5. When all three files (Apple Silicon, Intel, Windows) are attached, publish it:
 
-A later improvement: have the app check the Releases page for a newer `VSE_VERSION` and
-offer the download.
+```bash
+gh release edit "v$(cat VSE_VERSION)" --draft=false
+```
+
+A later improvement: most updates only change the Python layer (`scripts/modules/vse_standalone/`,
+`scripts/startup/`), which needs no compiling. The app could check the Releases page on
+launch and fetch just those files, with a full download only when the engine changed.
 
 ## Large files
 
