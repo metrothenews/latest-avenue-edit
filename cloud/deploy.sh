@@ -5,7 +5,7 @@
 
 # Deploy (or update) the cloud editor on Google Cloud Run. Safe to run again: every step
 # checks what exists. Needs the gcloud CLI signed in to an account that owns the project,
-# and the gh CLI signed in to an account that can see this repo (to fetch the Linux build).
+# and git access to this repo (the Linux build is fetched from its linux-build branch).
 #
 #   cloud/deploy.sh                 deploy with the defaults below
 #   OWNER_UIDS=a,b cloud/deploy.sh  allow more than one Firebase user
@@ -55,8 +55,13 @@ elif [ -n "${APP_TARBALL:-}" ]; then
 elif [ -f "$REPO/$RELEASE_FILE" ]; then
   cp "$REPO/$RELEASE_FILE" "$STAGE/$RELEASE_FILE"
 else
-  command -v gh >/dev/null || { echo "Install the gh CLI, or pass APP_TARBALL=<the Linux build file>"; exit 1; }
-  gh release download --repo metrothenews/latest-avenue-edit --pattern "$RELEASE_FILE" --dir "$STAGE"
+  # The build file is kept on the "linux-build" branch, split in two parts (GitHub refuses
+  # files over 100 MB): fetch that branch and join them.
+  GIT_LFS_SKIP_SMUDGE=1 git clone --quiet --depth 1 --single-branch --branch linux-build \
+    "$(git -C "$REPO" remote get-url origin)" "$STAGE/linux-build"
+  cat "$STAGE/linux-build/$RELEASE_FILE".part* > "$STAGE/$RELEASE_FILE"
+  (cd "$STAGE" && sha256sum -c linux-build/SHA256SUMS 2>/dev/null || shasum -a 256 -c linux-build/SHA256SUMS)
+  rm -rf "$STAGE/linux-build"
 fi
 mkdir -p "$STAGE/cloud" "$STAGE/scripts/modules" "$STAGE/scripts/startup/bl_app_templates_system"
 cp "$REPO/cloud/Dockerfile" "$REPO/cloud/start.sh" "$REPO/cloud/editor.sh" "$REPO/cloud/gateway.py" "$STAGE/cloud/"

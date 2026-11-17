@@ -36,14 +36,13 @@ needed for this.
    git clone --depth 1 https://github.com/metrothenews/latest-avenue-edit %USERPROFILE%\latest-avenue-edit
    ```
 
-3. Put `latest-avenue-video-linux-x64.tar.xz` (the editor's Linux build) in your Downloads
-   folder, unless it has been uploaded to the GitHub release and you have the `gh` CLI.
-4. Install **Tailscale** (<https://tailscale.com/download>) and sign in. It gives the PC a
+3. Install **Tailscale** (<https://tailscale.com/download>) and sign in. It gives the PC a
    fixed `https://…ts.net` address without touching your router. (Or use `-Tunnel none` and
    provide an https address another way; see below.)
-5. Double-click `cloud\pc\install_edit_server.cmd`.
+4. Double-click `cloud\pc\install_edit_server.cmd`.
 
-It checks Docker, builds the image (a few minutes the first time), starts the server, turns
+It checks Docker, fetches the editor's Linux build from this repository's `linux-build` branch
+(159 MB, kept there in two parts), builds the image (a few minutes the first time), starts the server, turns
 on the tunnel and prints the PC's address. Put that address in `editServiceUrl` in
 `src/data/edit.js` of the `latest-avenue` repo, then build and deploy the site.
 

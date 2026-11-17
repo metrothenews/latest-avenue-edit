@@ -30,8 +30,8 @@ no router changes) or "none" (you provide the public https address yourself).
 Firebase user IDs allowed to use the editor, comma-separated. Default: the site's owner.
 
 .PARAMETER AppTarball
-Path to latest-avenue-video-linux-x64.tar.xz if it is not next to the repository's README
-and not on the GitHub release.
+Path to latest-avenue-video-linux-x64.tar.xz, to use a specific build file. Without it the
+file is fetched from the repository's "linux-build" branch.
 
 .PARAMETER Cpus
 How many processor cores the editor may use (default: all but two, at least two).
@@ -132,6 +132,41 @@ if (-not $NoPull -and (Have "git") -and (Test-Path (Join-Path $Repo ".git"))) {
 Step "Finding the editor's Linux build"
 
 $target = Join-Path $Repo $ReleaseFile
+
+# The build file is kept on the repository's "linux-build" branch, split in two parts
+# (GitHub refuses files over 100 MB). Fetch that branch into a temporary folder and join them.
+function Get-BuildFromBranch($destination) {
+    if (-not (Have "git")) { return $false }
+    $url = (git -C $Repo remote get-url origin)
+    if (-not $url) { return $false }
+    $temp = Join-Path ([IO.Path]::GetTempPath()) ("la-linux-build-" + [guid]::NewGuid().ToString("N"))
+    $env:GIT_LFS_SKIP_SMUDGE = "1"
+    git clone --depth 1 --single-branch --branch linux-build $url $temp
+    if ($LASTEXITCODE -ne 0) { return $false }
+    $parts = Get-ChildItem -Path $temp -Filter "$ReleaseFile.part*" | Sort-Object Name
+    if (-not $parts) { Remove-Item -Recurse -Force $temp; return $false }
+    $out = [IO.File]::Create($destination)
+    try {
+        foreach ($part in $parts) {
+            $in = [IO.File]::OpenRead($part.FullName)
+            try { $in.CopyTo($out) } finally { $in.Dispose() }
+        }
+    } finally { $out.Dispose() }
+    $sums = Join-Path $temp "SHA256SUMS"
+    $ok = $true
+    if (Test-Path $sums) {
+        $expected = ((Get-Content $sums | Select-Object -First 1) -split "\s+")[0].ToLower()
+        $actual = (Get-FileHash -Algorithm SHA256 $destination).Hash.ToLower()
+        if ($expected -ne $actual) {
+            Write-Host "The joined file does not match its checksum (expected $expected, got $actual)."
+            Remove-Item -Force $destination
+            $ok = $false
+        }
+    }
+    Remove-Item -Recurse -Force $temp
+    return $ok
+}
+
 if ($AppTarball) {
     if (-not (Test-Path $AppTarball)) { Fail "$AppTarball does not exist." }
     Copy-Item $AppTarball $target -Force
@@ -139,11 +174,13 @@ if ($AppTarball) {
     $downloads = Join-Path $env:USERPROFILE "Downloads\$ReleaseFile"
     if (Test-Path $downloads) {
         Copy-Item $downloads $target
+    } elseif (Get-BuildFromBranch $target) {
+        Write-Host "Fetched the build from the linux-build branch."
     } elseif (Have "gh") {
         gh release download --repo metrothenews/latest-avenue-edit --pattern $ReleaseFile --dir $Repo
-        if ($LASTEXITCODE -ne 0) { Fail "could not download $ReleaseFile from the GitHub release. Put the file in your Downloads folder and run this again." }
+        if ($LASTEXITCODE -ne 0) { Fail "could not get $ReleaseFile from the linux-build branch or the GitHub release." }
     } else {
-        Fail "$ReleaseFile was not found. Put it in your Downloads folder (or next to the repository's README) and run this again."
+        Fail "$ReleaseFile could not be fetched from the linux-build branch. Put the file next to the repository's README and run this again."
     }
 }
 $sizeMb = [math]::Round((Get-Item $target).Length / 1MB)

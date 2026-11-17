@@ -59,21 +59,15 @@ there is never more than one editor running, whatever happens.
 ## Deploy or update
 
 Needs the `gcloud` CLI signed in to an account that owns the `latest-avenue-app` project, and
-the `gh` CLI (to download the Linux build from this repo's release).
+git access to this repository.
 
 ```bash
 cloud/deploy.sh
 ```
 
-The Linux build it downloads is `latest-avenue-video-linux-x64.tar.xz` on the latest release.
-**That file is not on the release yet** (the session that made it could not upload to GitHub
-and handed it over as a download instead). Either upload it once:
-
-```bash
-gh release upload v0.1.0 latest-avenue-video-linux-x64.tar.xz --repo metrothenews/latest-avenue-edit
-```
-
-or deploy straight from the downloaded file:
+The Linux build of the editor is fetched from this repository's `linux-build` branch, where it
+is kept in two parts (GitHub refuses files over 100 MB; uploading to the release was not
+possible from where it was built). To use another build file:
 
 ```bash
 APP_TARBALL=~/Downloads/latest-avenue-video-linux-x64.tar.xz cloud/deploy.sh
@@ -83,8 +77,8 @@ It prints the gateway's address. Put that in `editServiceUrl` in `src/data/edit.
 `latest-avenue` repo, then build and deploy the site. Run `cloud/deploy.sh` again to update:
 it lays this checkout's Python (`scripts/modules/vse_standalone` and friends) over the Linux
 build, so changes to the game view, tools or control server go out without recompiling.
-C/C++ changes need a new Linux build uploaded to the release as
-`latest-avenue-video-linux-x64.tar.xz` (a tar of the build's `bin` folder named `app`).
+C/C++ changes need a new Linux build (`latest-avenue-video-linux-x64.tar.xz`, a tar of the
+build's `bin` folder named `app`) put on the `linux-build` branch; its README says how.
 
 Settings are environment variables at the top of `deploy.sh` (project, region, size, allowed
 users, screen size).
@@ -104,8 +98,8 @@ start. A project saved under its own name is saved in place instead.
 
 ## Run it locally
 
-Put `latest-avenue-video-linux-x64.tar.xz` next to the repository's README, then from the
-repository root:
+Put `latest-avenue-video-linux-x64.tar.xz` (from the `linux-build` branch, parts joined) next
+to the repository's README, then from the repository root:
 
 ```bash
 docker build -f cloud/Dockerfile -t latest-avenue-edit .
