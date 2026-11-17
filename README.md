@@ -269,6 +269,57 @@ A later improvement: most updates only change the Python layer (`scripts/modules
 `scripts/startup/`), which needs no compiling. The app could check the Releases page on
 launch and fetch just those files, with a full download only when the engine changed.
 
+## Build times, updates and decisions
+
+Background for planning, from the first Intel Mac build. Times are estimates unless marked
+as measured; replace them with measured ones as machines finish.
+
+**Why compiling takes hours when installing Blender doesn't.** An installed Blender is
+already compiled by Blender's build servers. This app is a modified Blender with no
+published build, so the first machine of each kind compiles it from source (millions of
+lines of C/C++). Blender publishes its ~40 support libraries (codecs, Python, image formats)
+precompiled for Apple Silicon, Windows and Linux, but not for Intel Macs since Blender 5.0,
+so an Intel Mac also compiles those.
+
+| Machine | Libraries | App | First build in all |
+|---|---|---|---|
+| Apple Silicon Mac | downloaded (~1.5 GB) | 30–90 min | about 1–2 hours |
+| Intel Mac (8-core i9) | compiled, 2–4 hours | 1.5–3 hours | about 4–8 hours, plus fixes |
+| Windows x64 | downloaded (~1.5 GB) | 1–2 hours | about half a day the first time (no script yet, MSVC fixes) |
+
+**What needs recompiling after a change.** The long build happens once per machine, as long
+as the build folders are kept (`~/latest-avenue-video-build`, and on Intel `lib/macos_x64`
+and `~/latest-avenue-video-deps`; together roughly 15–25 GB).
+
+- Python layer (game view, automation tools, control server, theme, color pass, LUTs,
+  Automation panel, MCP bridge): no compiling. Running the installer again copies the files,
+  seconds to a minute or two.
+- Engine C++ (LUT modifier, ripple operators, menus): only the changed files recompile, a
+  few minutes.
+- Hours again only for: a newer Blender release (libraries too, if their versions changed),
+  deleting the build folders (`VSE_CLEAN=1` deletes the app build folder, not the
+  libraries), or the first build on a new kind of machine.
+
+Other people's machines never compile: they download the zip for their kind of computer from
+Releases. Each new version means a new zip per platform (built on each machine, minutes once
+its build folders exist) until the app can fetch Python-only updates itself (see "Releasing
+a version").
+
+**Why this stays on Blender 5.3 rather than moving to 4.5** (4.5 is the last Blender with
+Intel Mac libraries, so it would skip the Intel library build). Decided against because:
+
+- It saves only the library build. The app compile takes as long on 4.5.
+- Our engine code targets 5.x internals: the LUT modifier uses the per-file strip modifier
+  layout (`sequencer/intern/modifiers/`) and `api.py` uses `sequencer_scene`, both newer
+  than 4.5 as far as we know. Porting means rewriting and re-testing them, which needs
+  attention, where the library build runs unattended.
+- It loses the video editor improvements of Blender 5.0–5.3, and turns the upgrade plan
+  (rebase onto each new Blender) backwards: moving forward later means porting again.
+- 4.5's long-term support ends around mid-2027 (from memory, unverified), and Apple ends
+  Intel support with macOS 27, so the Intel runway is limited either way.
+
+4.5 would run on Apple Silicon and Windows as well; that wasn't the concern.
+
 ## Large files
 
 Blender keeps big binaries (startup file, icons, fonts, test data) in Git LFS on
@@ -282,8 +333,8 @@ there. Consequences:
 - **Don't add new files that match an LFS pattern** in `.gitattributes` (`*.png`, `*.blend`,
   `*.icns`, …) unless their path is exempted at the bottom of `.gitattributes`, as
   `release/vse/**` and `scripts/modules/vse_standalone/**` are. Otherwise only a pointer is
-  pushed and the file is lost. This matters for step 3.1: the edited `startup.blend` must be
-  exempted (add its path there) before committing it.
+  pushed and the file is lost. The edited Video Editing `startup.blend` is exempted this way; do the same for any
+  new file like it.
 
 ## Map of the code we own
 
