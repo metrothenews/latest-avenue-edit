@@ -29,6 +29,33 @@ export SOURCE_DATE_EPOCH=1745584760
 mkdir -p "$DEPS_BUILD"
 echo "Building libraries in $DEPS_BUILD (log: $LOG), installing to $LIBDIR"
 
+# Blender's dependency builder is maintained with CMake 3.31 (macos/macos_setup.sh pins
+# 3.31.6); CMake 4 refuses several libraries' older build files (e.g. ogg). Use a private
+# copy of that version for the libraries only, from Kitware's package on PyPI.
+CMAKE_WANTED=3.31.6
+CMAKE_ENV="$DEPS_BUILD/cmake-$CMAKE_WANTED"
+if [ ! -x "$CMAKE_ENV/bin/cmake" ]; then
+  echo "Installing CMake $CMAKE_WANTED for the library build"
+  python3 -m venv "$CMAKE_ENV"
+  "$CMAKE_ENV/bin/pip" install --quiet "cmake==$CMAKE_WANTED"
+fi
+export PATH="$CMAKE_ENV/bin:$PATH"
+cmake --version | head -1
+
+# A build folder configured with another CMake has to be configured again (downloaded
+# sources in packages/ and finished libraries are kept).
+cache_version() {
+  local f="$DEPS_BUILD/CMakeCache.txt" v=""
+  for part in MAJOR MINOR PATCH; do
+    v="$v.$(sed -n "s/^CMAKE_CACHE_${part}_VERSION:INTERNAL=//p" "$f")"
+  done
+  echo "${v#.}"
+}
+if [ -f "$DEPS_BUILD/CMakeCache.txt" ] && [ "$(cache_version)" != "$CMAKE_WANTED" ]; then
+  echo "Build folder was configured with another CMake, configuring again"
+  rm -rf "$DEPS_BUILD/CMakeCache.txt" "$DEPS_BUILD/CMakeFiles" "$DEPS_BUILD/build.ninja" "$DEPS_BUILD/build"
+fi
+
 if [ ! -f "$DEPS_BUILD/build.ninja" ]; then
   cmake -S "$REPO/build_files/build_environment" -B "$DEPS_BUILD" -G Ninja \
     -DVSE_DEPS_ONLY=ON \
