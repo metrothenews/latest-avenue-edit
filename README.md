@@ -93,6 +93,7 @@ no Mac available) for a later session that runs on Sam's own computer.
 | Game view | Checked on Linux with simulated key presses on a virtual display (software rendering): preview, apply and advance, pass state, HUD drawing. **Not yet used by a person on real hardware.** |
 | Theme | Applies with every property resolving. Only seen in screenshots; needs a visual pass against latestavenue.com. |
 | Two-pane default layout | **Done**: game view left, timeline right, `F` full-screen; seen in screenshots on Linux. |
+| Pane arrangement | **Works on the Intel Mac** (development mode): View > Arrangement in either pane switches between Side by Side and Stacked (preview on top, timeline below); remembered in `vse_layout.json` in the config folder. Tested by script in the GUI (switching both ways, restart); not yet checked by eye. |
 | Startup | No Blender splash. On a machine without a working Vulkan driver a "Failed to load using Vulkan, using OpenGL" notice appears (seen on the GPU-less cloud machine); expected to be absent on real hardware, unverified. |
 | macOS Apple Silicon build, `install_mac.command` | **Never run on an Apple Silicon Mac.** |
 | macOS Intel build | **Builds, installs and launches** on an Intel Mac (i9-9880H, macOS 26.7.3, Xcode 26.5) via `install_mac.command`, libraries self-built. No compile errors in our C++ under Apple Clang 21. The control server answers at 127.0.0.1:8792 after launch. Checked by eye on the Intel Mac by Sam ("looks great"): the list asked about was no splash, the "la" Dock icon, the two-pane layout, the game view HUD and the Automation panel showing the server URL. |
@@ -365,6 +366,7 @@ there. Consequences:
 | `scripts/modules/vse_standalone/api.py` | Automation tools |
 | `scripts/modules/vse_standalone/server.py` | Local control server, 127.0.0.1:8792 |
 | `scripts/modules/vse_standalone/game_view.py` | Game view pane |
+| `scripts/modules/vse_standalone/layout.py` | Pane arrangement (side by side / stacked) |
 | `scripts/modules/vse_standalone/color_pass.py`, `modes/`, `luts/` | Look/Color pass engine, night mode |
 | `scripts/modules/vse_standalone/theme.py` | Theme from latestavenue.com tokens |
 | `scripts/startup/vse_standalone_startup.py` | Starts everything; Automation panel |

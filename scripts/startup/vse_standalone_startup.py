@@ -36,6 +36,11 @@ def _deferred_start():
         theme.apply_if_first_run()
     except Exception as ex:
         print("latest avenue theme not applied: {:s}".format(str(ex)))
+    try:
+        from vse_standalone import layout
+        layout.apply_saved()
+    except Exception as ex:
+        print("Pane arrangement not applied: {:s}".format(str(ex)))
     if os.environ.get("VSE_NO_GAME_VIEW") != "1":
         try:
             from vse_standalone import game_view
@@ -148,6 +153,10 @@ def register():
         bpy.utils.register_class(cls)
     if not bpy.app.background:
         bpy.utils.register_class(_game_view_class())
+    from vse_standalone import layout
+    for cls in layout.classes:
+        bpy.utils.register_class(cls)
+    bpy.types.SEQUENCER_MT_view.append(layout.draw_view_menu)
     bpy.types.SEQUENCER_HT_header.append(_draw_header_button)
     if bpy.app.background:
         # Background sessions start the server explicitly with `server.serve_forever()`.
@@ -158,6 +167,10 @@ def register():
 
 def unregister():
     bpy.types.SEQUENCER_HT_header.remove(_draw_header_button)
+    from vse_standalone import layout
+    bpy.types.SEQUENCER_MT_view.remove(layout.draw_view_menu)
+    for cls in reversed(layout.classes):
+        bpy.utils.unregister_class(cls)
     for cls in reversed(_classes):
         bpy.utils.unregister_class(cls)
     if not bpy.app.background:
