@@ -9,7 +9,7 @@ switched off at build time. This file covers building it on every platform.
 | Linux arm64 | Should work, not yet built | Blender's precompiled `lib/linux_arm64` |
 | macOS Apple Silicon | Should work, not yet built | Blender's precompiled `lib/macos_arm64` |
 | Windows x64 / arm64 | Should work, not yet built | Blender's precompiled `lib/windows_x64` / `windows_arm64` |
-| macOS Intel | Build in progress (libraries not yet built) | Self-built `lib/macos_x64` (section 5) |
+| macOS Intel | Built and tested (both test suites pass) | Self-built `lib/macos_x64` (section 5) |
 
 Everything we added on top of Blender is either C++ inside Blender's existing modules (built
 the same way on every platform) or Python using only the standard library, so the platforms

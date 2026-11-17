@@ -77,14 +77,14 @@ no Mac available) for a later session that runs on Sam's own computer.
 | Item | State |
 |---|---|
 | Linux x64 build | **Builds, links and launches** (GCC 14, Ubuntu 24.04). |
-| `tests/vse/test_vse.py` | **13 of 13 pass** on Linux: video export and import, LUT pixel values, ripple delete / cut / delete range, split, trim, color pass, crop zoom. |
-| `tests/vse/test_mcp_e2e.py` | **Passes** on Linux: MCP client lists tools, edits, gets errors and rendered frames back; web UI routes respond. |
+| `tests/vse/test_vse.py` | **13 of 13 pass** on Linux and on the Intel Mac: video export and import, LUT pixel values, ripple delete / cut / delete range, split, trim, color pass, crop zoom. |
+| `tests/vse/test_mcp_e2e.py` | **Passes** on Linux and on the Intel Mac (10 checks, the preview-frame one skipped by design with no clips): MCP client lists tools, edits, gets errors and rendered frames back; web UI routes respond. |
 | Game view | Checked on Linux with simulated key presses on a virtual display (software rendering): preview, apply and advance, pass state, HUD drawing. **Not yet used by a person on real hardware.** |
 | Theme | Applies with every property resolving. Only seen in screenshots; needs a visual pass against latestavenue.com. |
 | Two-pane default layout | **Done**: game view left, timeline right, `F` full-screen; seen in screenshots on Linux. |
 | Startup | No Blender splash. On a machine without a working Vulkan driver a "Failed to load using Vulkan, using OpenGL" notice appears (seen on the GPU-less cloud machine); expected to be absent on real hardware, unverified. |
 | macOS Apple Silicon build, `install_mac.command` | **Never run on an Apple Silicon Mac.** |
-| macOS Intel build | **In progress** on an Intel Mac (i9, macOS 26.7, Xcode 26.5): build tools installed; libraries not yet built. `install_mac.command` Intel path, `build_files/vse/build_libs_macos_x64.sh` and `build_files/vse/deps_vse.cmake` written, not yet run through. |
+| macOS Intel build | **Builds, installs and launches** on an Intel Mac (i9-9880H, macOS 26.7.3, Xcode 26.5) via `install_mac.command`, libraries self-built. No compile errors in our C++ under Apple Clang 21. The control server answers at 127.0.0.1:8792 after launch. **Not yet checked by eye** on the Mac: splash, Dock icon, layout, game view HUD, Automation panel. |
 | Windows build | Never attempted. No install script yet (see "Building on each kind of computer"). |
 | Releases | None published yet. |
 | App icon | Made and wired in; not seen in a built Mac or Windows app. |
@@ -275,7 +275,8 @@ launch and fetch just those files, with a full download only when the engine cha
 ## Build times, updates and decisions
 
 Background for planning, from the first Intel Mac build. Times are estimates unless marked
-as measured; replace them with measured ones as machines finish.
+as measured; replace them with measured ones as machines finish. The Intel Mac compiled far
+faster than estimated, so the other estimates are likely high too.
 
 **Why compiling takes hours when installing Blender doesn't.** An installed Blender is
 already compiled by Blender's build servers. This app is a modified Blender with no
@@ -287,7 +288,7 @@ so an Intel Mac also compiles those.
 | Machine | Libraries | App | First build in all |
 |---|---|---|---|
 | Apple Silicon Mac | downloaded (~1.5 GB) | 30–90 min | about 1–2 hours |
-| Intel Mac (8-core i9) | compiled, 2–4 hours | 1.5–3 hours | about 4–8 hours, plus fixes |
+| Intel Mac (8-core i9) | compiled: **~45 min measured** | **~25 min measured** | **~70 min of compiling measured**, plus tool installs and fixes (a few hours in all the first time) |
 | Windows x64 | downloaded (~1.5 GB) | 1–2 hours | about half a day the first time (no script yet, MSVC fixes) |
 
 **What needs recompiling after a change.** The long build happens once per machine, as long
