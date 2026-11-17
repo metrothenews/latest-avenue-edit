@@ -149,16 +149,20 @@ ffmpeg -i out/video1.mp4 -vf "fps=1.5,scale=180:-1,tile=14x2" -frames:v 1 sheet.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `font_size` | 92 | Text size |
-| `stretch_y` | 1.15 | Vertical stretch of the text |
-| `color` | `[0.93, 0.93, 0.93, 0.9]` | Text colour and opacity |
-| `block_width` | 0.5 | Width of the text block, as a share of the frame width |
+| `font_size` | 96 | Text size |
+| `stretch_x` | 0.955 | Slight squeeze, standing in for the references' tight letter spacing (text strips have no letter-spacing control) |
+| `stretch_y` | 1.07 | Vertical stretch of the text |
+| `weight` | 0.02 | Thickens the strokes with a hairline edge in the text's own colour; `0` for the plain font |
+| `color` | `[0.98, 0.98, 0.98, 0.9]` | Text colour and opacity |
+| `max_chars` | 14 | A row holds at most this many characters, spaces included (the references' line-break rule) |
+| `block_width` | 0.48 | Width of the text block, as a share of the frame width (0.40–0.57 in the references, hand-set per phrase there) |
 | `block_top` | 0.16 | Top of the block, as a share of the picture height from its top |
-| `line_pitch` | 1.3 | Distance between rows, in text sizes |
-| `shadow_blur`, `shadow_color` | 0.4, black | Soft dark shadow behind the text |
-| `outline_width`, `outline_color` | 0.04, black at 50 % | Thin dark edge; with the shadow it keeps text readable over bright footage. `0` turns it off |
+| `block_align_y` | `TOP` | `CENTER` centers the block in the picture, as the references do in their short picture band |
+| `line_pitch` | 1.27 | Distance between rows, in text sizes (122 px) |
+| `shadow_blur`, `shadow_color` | 0.3, black at 60 % | Faint soft shadow, as in the references |
+| `outline_width` | 0 | A dark outline. Off: the references have none |
 | `lowercase` | true | Show the lyrics in lowercase, without punctuation (apostrophes stay) |
-| `lead_frames` | 1 | How many frames early a word appears |
+| `lead_frames` | 1 | How many frames early a word appears (the references: 30–40 ms early) |
 
 ## Inside the editor, and for agents
 
@@ -175,6 +179,87 @@ scripts via `vse_standalone.api.call`:
 `add_lyric_words` on its own is the way to put timed lyrics on an edit made by hand: cut the
 picture yourself in the app, then call it once.
 
+## Precision pass (17 November 2026): what changed and why
+
+Feedback on the first three videos: lyric accuracy good; timing questionable; font close but
+not close enough; an outline the references do not have; word spacing and line breaks not
+like the references; clip variety should follow the subject folders by rule.
+
+### Timing: three sources instead of one
+
+```bash
+# once: a second environment, for the vocal separator (PyTorch needs Python <= 3.12 on Intel)
+/usr/local/bin/python3.11 -m venv stems-env
+stems-env/bin/pip install "torch==2.2.2" "torchaudio==2.2.2" "numpy<2" demucs soundfile
+
+# per audio
+stems-env/bin/python  tools/vse_lyrics/separate_vocals.py audio1.wav -o audio1.vocals.wav
+lyrics-env/bin/python tools/vse_lyrics/align_lyrics.py audio1.wav lyrics.txt \
+    --vocals audio1.vocals.wav -o audio1.lyrics.json
+```
+
+1. **Vocal separation** (`separate_vocals.py`, Demucs, MIT licence). On the full mix, word
+   starts were no closer to audio onsets than random times were: the beat drowns the voice.
+   On the isolated voice both methods below improve.
+2. **Forced alignment** (`forced_align.py`, wav2vec 2.0 base 960h, Apache-2.0, run with
+   onnxruntime, 380 MB download). The words are known, so the model only places them, at
+   20 ms resolution. Its confidence on singing is modest (median 0.15 on the mix, 0.37 on the
+   voice), so it is not trusted alone.
+3. **Voice level.** A word cannot start in silence. When recognizer and forced aligner
+   disagree by more than 0.25 s, the one in silence loses; otherwise the one where the voice
+   rises more wins. A word that follows a silence moves back to where the voice comes in.
+
+`align_lyrics.py` prints which source timed how many words and every word moved by more than
+0.2 s; the same is in the file under `"timing"`, and each word carries `source`,
+`recognizer_start`, `forced_start` and `forced_confidence`. `--no-forced` gives the old
+behaviour.
+
+**Checking by ear**: `make_lyric_video.py --sync-check review.mp4` exports a second copy with
+a tick on every sung word (the `add_sync_ticks` tool). A tick off its word is a mistimed word:
+edit that word's `start` in the `.lyrics.json` and build again.
+
+Measured from the references: words appear 30–40 ms before they are sung (one frame), and
+the references themselves scatter by about ±70 ms per word.
+
+### Style: measured from the four reference videos
+
+See the style table above. The line-break rule (14 characters per row) reproduces 44 of 45
+breaks checked in the references. Rendering a reference phrase through `add_lyric_words`
+and laying it beside the reference frame matched word widths within about 1 % and the row
+pitch exactly. Still different: the references' block width changes per phrase with no rule
+found (it looks hand-set); 48 % is their average.
+
+### Clips: chosen by subject folder, by rule
+
+`make_lyric_video.py` now plans the clips before building (`plan_clips`):
+
+1. **Subjects** are the folder names the clips sit in (`people`, `cars`, `urban`, `transit`,
+   `misc luxury`, `fireworks`).
+2. **Quotas** (`subject_quotas`): each video's slots are shared out by `--weights` (default
+   `people=2`, the rest 1) with largest-remainder rounding; every subject gets at least one
+   slot when there are enough slots. Leftover slots go to subjects that are behind their
+   share over the earlier videos of the batch.
+3. **Order** (`subject_order`): each subject's clips are spread evenly through the video,
+   never the same subject twice in a row; the video opens on `--first` (default `people`,
+   as the references do).
+4. **Clip within the subject**: long enough for its slot, from the collection used least so
+   far, then a seeded random choice. Never a clip an earlier video used.
+
+The report (`--report`) lists the quota, the plan and the subject of every cut. The `--used`
+file is now `{"videos": {name: [clips]}}`, so rebuilding one video frees its old clips.
+
+### Where this stopped
+
+- The three Assignment 17 videos were being rebuilt with all of the above when the session
+  ended; outputs in `/Volumes/Leverett/latest-avenue-edit-working/assignment17/out/`
+  (`out/review/` holds the tick copies, `out/v1_first_pass/` the first versions).
+  **Not yet looked at frame by frame, and not listened to.** Check the contact sheets and
+  the tick copies first.
+- `tests/vse/test_vse.py`: 16 of 16 pass. No tests yet for `forced_align.py`,
+  `refine_timing`, `plan_clips` or `add_sync_ticks`.
+- Models and both Python environments are on the removable drive
+  (`.../latest-avenue-edit-working/{models,lyrics-env,stems-env}`), not in the repository.
+
 ## What is not done yet
 
 - **No headline.** The TikTok examples have a caption above the picture ("this song is gonna
@@ -184,7 +269,7 @@ picture yourself in the app, then call it once.
 - **Clips are picked by subject folder and length only**, not by what is in them. Check the
   contact sheet.
 - **One-click button in the app.** The tools exist; there is no panel for them yet.
-- Timing was checked by comparing two recognizer models, not by a person listening.
+- Timing has not been checked by a person listening (use the tick copies).
 
 ## Files
 

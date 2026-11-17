@@ -369,7 +369,7 @@ there. Consequences:
 | `scripts/modules/vse_standalone/game_view.py` | Game view pane |
 | `scripts/modules/vse_standalone/layout.py` | Pane arrangement (side by side / stacked) |
 | `scripts/modules/vse_standalone/lyric_video.py` | Lyric video tools: 3:4 picture clips, word-by-word lyric text, `make_lyric_video` |
-| `tools/vse_lyrics/` | Lyric timing from audio (`align_lyrics.py`) and the command-line lyric video builder; workflow in `doc/vse/lyric_video_workflow.md` |
+| `tools/vse_lyrics/` | Lyric timing from audio (`align_lyrics.py`, with `separate_vocals.py` and `forced_align.py` for precision), and the command-line lyric video builder with subject-based clip planning (`make_lyric_video.py`); workflow in `doc/vse/lyric_video_workflow.md` |
 | `scripts/modules/vse_standalone/color_pass.py`, `modes/`, `luts/` | Look/Color pass engine, night mode |
 | `scripts/modules/vse_standalone/theme.py` | Theme from latestavenue.com tokens |
 | `scripts/startup/vse_standalone_startup.py` | Starts everything; Automation panel |

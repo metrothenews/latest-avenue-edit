@@ -13,6 +13,7 @@ Tools (all available to agents through the control server, and to scripts throug
 ``add_picture_clips``  Clips cut one after another, each filling the picture area.
 ``add_lyric_words``    On-screen lyrics from a ``.lyrics.json`` timing file.
 ``make_lyric_video``   The whole video in one call: project, audio, clips, lyrics, export.
+``add_sync_ticks``     A tick on every sung word, for checking the timing by ear.
 
 The timing file comes from ``tools/vse_lyrics/align_lyrics.py``. The full workflow is in
 ``doc/vse/lyric_video_workflow.md``.
@@ -37,20 +38,24 @@ FONT_CANDIDATES = (
     "/usr/share/fonts/truetype/liberation/LiberationSansNarrow-Regular.ttf",
 )
 
-# The house "new style" (values measured from the example videos, for a 1080 x 1920 frame).
+# The house "new style". Values measured from the four reference videos (576 x 1024 TikTok
+# examples), converted to a 1080-wide frame; they scale with the frame width.
 STYLE = {
     "picture_aspect": 0.75,       # picture width / height (3:4); black bars fill the rest
-    "font_size": 92.0,
-    "stretch_y": 1.15,            # the "slight vertical stretch"
-    "color": [0.93, 0.93, 0.93, 0.9],   # very light grey, 90 % opacity
-    "block_width": 0.5,           # of the frame width
+    "font_size": 96.0,
+    "stretch_x": 0.955,           # the reference's tight letter spacing, as a slight squeeze
+    "stretch_y": 1.07,            # the "slight vertical stretch"
+    "color": [0.98, 0.98, 0.98, 0.9],   # almost white, 90 % opacity
+    "max_chars": 14,              # a row holds at most this many characters (spaces included)
+    "block_width": 0.48,          # of the frame width (0.40-0.57 in the references)
     "block_top": 0.16,            # top of the text block, from the top of the picture (0..1)
-    "line_pitch": 1.3,            # row distance, in font sizes
-    "min_gap": 0.28,              # smallest space between words, in font sizes
-    # A tight dark shadow and a thin soft edge keep the text readable on bright footage.
-    "shadow_blur": 0.4,
-    "shadow_color": [0.0, 0.0, 0.0, 1.0],
-    "outline_width": 0.04,
+    "block_align_y": "TOP",       # "CENTER": center the block in the picture, as the references do
+    "line_pitch": 1.27,           # row distance, in font sizes (122 px)
+    "weight": 0.02,               # thickens the strokes (an edge in the text's own colour)
+    # A faint soft shadow, as in the references. No outline.
+    "shadow_blur": 0.3,
+    "shadow_color": [0.0, 0.0, 0.0, 0.6],
+    "outline_width": 0.0,
     "outline_color": [0.0, 0.0, 0.0, 0.5],
     "lowercase": True,
     "lead_frames": 1,             # words appear this many frames before they are sung
@@ -80,29 +85,40 @@ def display_word(text, lowercase=True):
     return text.lower() if lowercase else text
 
 
-def layout_block(widths, block_width, min_gap):
-    """Wrap words into rows and justify every row.
+def wrap_rows(texts, max_chars):
+    """Break words into rows the way the references do: a row holds as many words as fit in
+    `max_chars` characters, counting the spaces between them.
 
-    :arg widths: Width of every word, in pixels.
-    :return: ``[(row, x), ...]`` for every word, x from the left edge of the block.
-
-    A row with one word sits on the left; rows with more are spread over the full width,
-    first word on the left edge and last word on the right edge (as in the example videos).
+    :return: A list of rows, each a list of word indices.
     """
-    rows, row, used = [], [], 0.0
-    for index, width in enumerate(widths):
-        needed = width if not row else used + min_gap + width
-        if row and needed > block_width:
+    rows, row, used = [], [], 0
+    for index, text in enumerate(texts):
+        needed = len(text) if not row else used + 1 + len(text)
+        if row and needed > max_chars:
             rows.append(row)
-            row, needed = [], width
+            row, needed = [], len(text)
         row.append(index)
         used = needed
     if row:
         rows.append(row)
+    return rows
+
+
+def layout_block(widths, rows, block_width):
+    """Justify every row to the block width.
+
+    :arg widths: Width of every word, in pixels.
+    :arg rows: Rows of word indices (see `wrap_rows`).
+    :return: ``[(row, x), ...]`` for every word, x from the left edge of the block.
+
+    A row with one word sits on the left; rows with more are spread over the full width,
+    first word on the left edge and last word on the right edge, also on the last row (as in
+    the reference videos). A row wider than the block keeps its natural size.
+    """
     placed = [None] * len(widths)
     for r, row in enumerate(rows):
         total = sum(widths[i] for i in row)
-        gap = (block_width - total) / (len(row) - 1) if len(row) > 1 else 0.0
+        gap = max(0.0, (block_width - total) / (len(row) - 1)) if len(row) > 1 else 0.0
         x = 0.0
         for i in row:
             placed[i] = (r, x)
@@ -198,14 +214,12 @@ def add_lyric_words(lyrics: str, channel: int = 3, picture_aspect: float = 0.75,
     vfont = _load_font(font_path) if font_path else None
     font_id = blf.load(font_path) if font_path else 0
     blf.size(font_id, size)
-    space_w = blf.dimensions(font_id, "n n")[0] - 2 * blf.dimensions(font_id, "n")[0]
 
     px, py, pic_w, pic_h = _picture_rect(scene, picture_aspect)
     block_w = st["block_width"] * width
     block_x = (width - block_w) / 2
-    block_top = py + pic_h - st["block_top"] * pic_h      # y of the top of the first row
-    pitch = st["line_pitch"] * size * st["stretch_y"]
-    stretch = st["stretch_y"]
+    pitch = st["line_pitch"] * size
+    stretch_x, stretch = st["stretch_x"], st["stretch_y"]
     last_end = end if end is not None else data.get("duration", data["words"][-1]["end"])
 
     strips = scene.sequence_editor.strips
@@ -218,8 +232,13 @@ def add_lyric_words(lyrics: str, channel: int = 3, picture_aspect: float = 0.75,
         words, texts = [words[i] for i in keep], [texts[i] for i in keep]
         if not words:
             continue
-        widths = [blf.dimensions(font_id, t)[0] for t in texts]
-        placed = layout_block(widths, block_w, max(st["min_gap"] * size, space_w))
+        widths = [blf.dimensions(font_id, t)[0] * stretch_x for t in texts]
+        rows = wrap_rows(texts, st["max_chars"])
+        placed = layout_block(widths, rows, block_w)
+        if st["block_align_y"] == "CENTER":
+            block_top = py + pic_h / 2 + (len(rows) * pitch) / 2
+        else:
+            block_top = py + pic_h - st["block_top"] * pic_h      # y of the top of the first row
         clear = lines[n + 1]["start"] if n + 1 < len(lines) else last_end
         # The line leaves on the frame the next one's first word arrives (no overlap).
         clear_frame = _frame_of(clear, fps) - (st["lead_frames"] if n + 1 < len(lines) else 0)
@@ -241,20 +260,26 @@ def add_lyric_words(lyrics: str, channel: int = 3, picture_aspect: float = 0.75,
             strip.shadow_color = st["shadow_color"]
             strip.shadow_offset = 0.0
             strip.shadow_blur = st["shadow_blur"]
-            strip.use_outline = st["outline_width"] > 0
-            strip.outline_width = st["outline_width"]
-            strip.outline_color = st["outline_color"]
+            if st["outline_width"] > 0:
+                strip.use_outline = True
+                strip.outline_width = st["outline_width"]
+                strip.outline_color = st["outline_color"]
+            elif st["weight"] > 0:
+                strip.use_outline = True
+                strip.outline_width = st["weight"]
+                strip.outline_color = st["color"]
             strip.wrap_width = 0.0
             strip.alignment_x = 'LEFT'
             strip.anchor_x = 'LEFT'
             strip.anchor_y = 'TOP'
             y = block_top - row * pitch
             # The stretch scales the strip around the frame center; place it so that the
-            # stretched text lands on y.
+            # stretched text lands on (x, y).
             strip.location = (
-                (block_x + x) / width,
+                0.5 + ((block_x + x) / width - 0.5) / stretch_x,
                 0.5 + (y / height - 0.5) / stretch,
             )
+            strip.transform.scale_x = stretch_x
             strip.transform.scale_y = stretch
             strip.blend_type = 'ALPHA_OVER'
             count += 1
@@ -262,6 +287,41 @@ def add_lyric_words(lyrics: str, channel: int = 3, picture_aspect: float = 0.75,
             channels = max(channels, i + 1)
     return {"words": count, "lines": len(lines), "rows_max": rows_max,
             "channels": [channel, channel + channels - 1], "font": font_path or "built-in"}
+
+
+@tool()
+def add_sync_ticks(lyrics: str, channel: int = 40, volume: float = 0.9) -> dict:
+    """Add a short tick sound at the moment every lyric word is sung, for checking the lyric
+    timing by ear: export the result as a review copy, play it, and listen for ticks that do
+    not land on their word. Delete the tick strips (named "tick ...") before the final export.
+
+    :arg lyrics: Path of the .lyrics.json timing file.
+    :arg channel: Channel for the ticks (they never overlap, so one is enough).
+    """
+    import math
+    import struct
+    import tempfile
+    import wave
+    data = _read_lyrics(lyrics)
+    scene = api._scene()
+    fps = _fps(scene)
+    path = os.path.join(tempfile.gettempdir(), "vse_sync_tick.wav")
+    rate, length = 48000, 0.03
+    with wave.open(path, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(rate)
+        count = int(rate * length)
+        wav.writeframes(b"".join(
+            struct.pack("<h", int(30000 * math.sin(2 * math.pi * 2000 * n / rate) * (1 - n / count)))
+            for n in range(count)))
+    strips = scene.sequence_editor.strips
+    frames = sorted({_frame_of(w["start"], fps) for w in data["words"]})
+    for frame in frames:
+        strip = strips.new_sound(name="tick {:04d}".format(frame), filepath=path, channel=channel,
+                                 frame_start=frame)
+        strip.volume = volume
+    return {"ticks": len(frames), "channel": channel}
 
 
 def plan_cuts(lyrics, duration, max_clip=3.2, min_clip=0.9):

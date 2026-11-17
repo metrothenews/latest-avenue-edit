@@ -277,6 +277,108 @@ def align(heard, sheet_words, lines, duration, *, lead_in=None, lead_out=None):
     }
 
 
+def refine_timing(result, vocals, models_dir=None, log=print):
+    """Refine every word's start with forced alignment and the level of the voice.
+
+    Three sources are weighed per word:
+
+    - the recognizer's time (good when it heard the word, a guess when it did not);
+    - the forced aligner's time (`forced_align.py`: the known words placed on the audio);
+    - whether the voice is actually sounding there (a word cannot start in silence).
+
+    The forced time is used when the two agree (it is finer, 20 ms) or when the recognizer
+    only guessed. When they disagree, the one in silence loses; otherwise the one where the
+    voice rises more wins. Last, a word that follows a silence is moved back to the moment
+    the voice comes in.
+
+    :arg vocals: Audio file to measure, ideally the isolated voice (`separate_vocals.py`).
+    """
+    import math
+    import numpy
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import forced_align
+
+    samples = forced_align.load_audio(vocals)
+    rate = forced_align.SAMPLE_RATE
+    track = math.sqrt(float(numpy.mean(samples ** 2))) + 1e-9
+
+    def level(t0, t1):
+        """Loudness of the voice between two times, in dB relative to the whole clip."""
+        seg = samples[max(0, int(t0 * rate)):max(0, int(t1 * rate))]
+        if len(seg) == 0:
+            return -99.0
+        return 20.0 * math.log10((math.sqrt(float(numpy.mean(seg ** 2))) + 1e-9) / track)
+
+    def rise(t):
+        return level(t, t + 0.1) - level(t - 0.12, t - 0.02)
+
+    words = result["words"]
+    session, vocab = forced_align.load_model(models_dir)
+    forced = forced_align.align_words(samples, [w["text"] for w in words], session, vocab)
+
+    for word, f in zip(words, forced):
+        rec = word["start"]
+        word["recognizer_start"] = rec
+        word["forced_start"] = round(f["start"], 3) if f else None
+        word["forced_confidence"] = f["confidence"] if f else None
+        source = "recognizer"
+        if f:
+            silent_f = level(f["start"], f["start"] + 0.12) < -15.0
+            silent_r = level(rec, rec + 0.12) < -15.0
+            if not word["matched"] or abs(f["start"] - rec) <= 0.25:
+                use_forced = not silent_f
+            elif silent_r != silent_f:
+                use_forced = silent_r
+            else:
+                difference = rise(f["start"]) - rise(rec)
+                use_forced = difference > 3.0 or (difference > -3.0 and f["confidence"] >= 0.2)
+            if use_forced:
+                word["start"], source = f["start"], "forced"
+                word["end"] = max(f["end"], f["start"])
+        word["source"] = source
+
+    # Starts in order, at least 40 ms apart.
+    for a, b in zip(words, words[1:]):
+        if b["start"] < a["start"] + 0.04:
+            b["start"] = a["start"] + 0.04
+
+    # The first word after a silence starts when the voice comes in.
+    for k, word in enumerate(words):
+        floor = words[k - 1]["start"] + 0.1 if k else 0.0
+        t = u = word["start"]
+        while u - 0.02 >= floor and level(u - 0.04, u) >= -12.0:
+            u -= 0.02
+        entered = u <= 0.02 or level(u - 0.12, u - 0.02) < -20.0
+        if entered and 0.06 < t - u <= 1.0 and (k == 0 or u - floor > 0.05):
+            word["start"], word["source"] = max(0.0, u), "voice-onset"
+
+    for a, b in zip(words, words[1:]):
+        a["end"] = min(max(a["end"], a["start"] + 0.02), b["start"])
+    for word in words:
+        word["start"], word["end"] = round(word["start"], 3), round(max(word["end"], word["start"]), 3)
+    for line in result["lines"]:
+        line["start"] = words[line["words"][0]]["start"]
+        line["end"] = words[line["words"][-1]]["end"]
+
+    counts = {}
+    for word in words:
+        counts[word["source"]] = counts.get(word["source"], 0) + 1
+    moved = [w for w in words if abs(w["start"] - w["recognizer_start"]) > 0.2]
+    confidences = sorted(w["forced_confidence"] for w in words if w["forced_confidence"] is not None)
+    result["timing"] = {
+        "measured_on": vocals,
+        "sources": counts,
+        "moved_over_0.2s": [{"text": w["text"], "from": round(w["recognizer_start"], 2),
+                             "to": w["start"], "source": w["source"]} for w in moved],
+        "forced_confidence_median": confidences[len(confidences) // 2] if confidences else None,
+    }
+    log("timing: " + ", ".join("{:d} {:s}".format(n, name) for name, n in sorted(counts.items())) +
+        "; forced-alignment confidence {!s} (median)".format(result["timing"]["forced_confidence_median"]))
+    for w in moved:
+        log("  {:14s} {:6.2f}s -> {:6.2f}s  ({:s})".format(w["text"], w["recognizer_start"], w["start"], w["source"]))
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("audio")
@@ -296,6 +398,12 @@ def main():
     parser.add_argument("--lead-out", type=int, default=None,
                         help="sheet words to add after the match (default: complete the last line "
                              "when there is unplaced singing after it)")
+    parser.add_argument("--vocals",
+                        help="the isolated voice of the same audio (separate_vocals.py): the lyrics "
+                             "are heard and timed on it instead of on the full mix")
+    parser.add_argument("--no-forced", action="store_true",
+                        help="keep the recognizer's word times; skip forced alignment and the "
+                             "voice-level checks")
     parser.add_argument("--heard", help="reuse the recognizer output saved in this JSON file")
     parser.add_argument("--save-heard", help="save the recognizer output to this JSON file")
     args = parser.parse_args()
@@ -315,12 +423,16 @@ def main():
             # recognizer can't simply recite the sheet.
             vocabulary = sorted({clean_display(w["text"]).strip(",.?!—-").lower() for w in sheet_words})
             prompt = "Song lyrics. Words: " + ", ".join(vocabulary[:120])
-        heard, duration = transcribe(args.audio, args.model, prompt, models_dir=args.models_dir)
+        heard, duration = transcribe(args.vocals or args.audio, args.model, prompt, models_dir=args.models_dir)
     if args.save_heard:
         with open(args.save_heard, "w", encoding="utf-8") as fh:
             json.dump({"heard": heard, "duration": duration, "model": args.model}, fh, indent=1)
 
     result = align(heard, sheet_words, lines, duration, lead_in=args.lead_in, lead_out=args.lead_out)
+    if not args.no_forced:
+        if not args.vocals:
+            print("note: no --vocals given, timing is measured on the full mix (less precise)", file=sys.stderr)
+        refine_timing(result, args.vocals or args.audio, args.models_dir)
     result.update(audio=args.audio, lyrics=args.lyrics, model=args.model,
                   heard_text=" ".join(w["text"] for w in heard))
     output = args.output or re.sub(r"\.[^.]+$", "", args.audio) + ".lyrics.json"

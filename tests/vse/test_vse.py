@@ -297,9 +297,13 @@ def test_lyric_layout():
     assert lyric_video.display_word("Soon?") == "soon"
     assert lyric_video.display_word("I\u2019m") == "i'm"
     assert lyric_video.display_word("my\u2014") == "my"
-    placed = lyric_video.layout_block([100, 100, 100, 250, 80], 300, 20)
-    assert [row for row, _x in placed] == [0, 0, 1, 2, 3], placed
-    assert placed[0][1] == 0 and placed[1][1] == 200  # justified: last word ends on the right edge
+    # Rows hold at most 14 characters, spaces included, as in the reference videos.
+    rows = lyric_video.wrap_rows(["too", "soon", "i'm", "ready", "babe"], 14)
+    assert rows == [[0, 1, 2], [3, 4]], rows
+    assert lyric_video.wrap_rows(["screw", "you", "over", "x"], 14) == [[0, 1, 2], [3]]
+    placed = lyric_video.layout_block([100, 60, 50, 120, 90], rows, 300)
+    assert [row for row, _x in placed] == [0, 0, 0, 1, 1], placed
+    assert placed[0][1] == 0 and placed[2][1] == 250 and placed[4][1] == 210  # justified to both edges
     cuts = lyric_video.plan_cuts({"lines": [
         {"start": 0.3, "end": 2.0, "words": [0, 1]}, {"start": 2.5, "end": 9.0, "words": [2, 3, 4]}],
         "words": [{"start": 0.3}, {"start": 1.0}, {"start": 2.5}, {"start": 5.5}, {"start": 8.0}]}, 10.0)
