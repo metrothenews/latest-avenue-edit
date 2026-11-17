@@ -7,7 +7,7 @@ The first commit is Blender v5.3.0 unchanged; `git diff 16edb42a` shows everythi
 | Area | Files | Change |
 |---|---|---|
 | Build | `build_files/cmake/config/vse_standalone.cmake` | 3D, render engines, simulation and 3D I/O off; video, audio, OTIO on; per-platform sections |
-| Library builder | `build_files/build_environment/CMakeLists.txt`, `cmake/download.cmake` | `-DVSE_DEPS_ONLY=ON` skips the libraries listed in `build_files/vse/deps_vse.cmake` (used for Intel Mac self-built libraries); off by default |
+| Library builder | `build_files/build_environment/CMakeLists.txt`, `cmake/download.cmake` | `-DVSE_DEPS_ONLY=ON` skips the libraries listed in `build_files/vse/deps_vse.cmake` (used for Intel Mac self-built libraries); off by default. `cmake/zstandard.cmake`: missing build-order dependency on `python_site_packages` (its `setup.py` imports `packaging`) |
 | Startup | `windowmanager/intern/wm_files.cc` | Always start in the Video Editing app template |
 | Menus | `makesrna/intern/rna_screen.cc`, `editors/screen/workspace_edit.cc` | 3D editors and the General workspace set hidden from menus (still valid for scripts and old files) |
 | LUT modifier | `sequencer/SEQ_lut.hh`, `sequencer/intern/lut.cc`, `sequencer/intern/modifiers/MOD_lut.cc`, `makesdna/DNA_sequence_types.h`, `makesrna/intern/rna_sequencer.cc` | Strip modifier type `LUT` (`.cube` 1D/3D, intensity, clamp, mask input) |

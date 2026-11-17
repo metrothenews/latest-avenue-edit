@@ -41,5 +41,7 @@ ExternalProject_Add(external_zstandard
 add_dependencies(
   external_zstandard
   external_python
+  # VSE Standalone: setup.py imports `packaging`, installed by python_site_packages.
+  external_python_site_packages
   external_zstd
 )
