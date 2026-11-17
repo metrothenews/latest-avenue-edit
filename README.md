@@ -88,7 +88,7 @@ no Mac available) for a later session that runs on Sam's own computer.
 | Item | State |
 |---|---|
 | Linux x64 build | **Builds, links and launches** (GCC 14, Ubuntu 24.04). |
-| `tests/vse/test_vse.py` | **16 of 16 pass** on the Intel Mac; on Linux 13 of 13 passed before the three lyric video tests were added (those have not run on Linux): video export and import, LUT pixel values, ripple delete / cut / delete range, split, trim, color pass, crop zoom. |
+| `tests/vse/test_vse.py` | **16 of 16 pass** on the Intel Mac and on Linux: video export and import, LUT pixel values, ripple delete / cut / delete range, split, trim, color pass, crop zoom. |
 | `tests/vse/test_mcp_e2e.py` | **Passes** on Linux and on the Intel Mac (10 checks, the preview-frame one skipped by design with no clips): MCP client lists tools, edits, gets errors and rendered frames back; web UI routes respond. |
 | Game view | Checked on Linux with simulated key presses on a virtual display (software rendering): preview, apply and advance, pass state, HUD drawing. **Not yet used by a person on real hardware.** |
 | Theme | Applies with every property resolving. Only seen in screenshots; needs a visual pass against latestavenue.com. |
@@ -101,6 +101,7 @@ no Mac available) for a later session that runs on Sam's own computer.
 | Windows build | Never attempted. No install script yet (see "Building on each kind of computer"). |
 | Releases | **v0.1.0 published** (2026-11-17) with the Intel Mac file only (`latest-avenue-video-macos-x64.zip`, built and checked on the Intel Mac; the `releases/latest/download/` link works). Published early on purpose: the Apple Silicon and Windows links give an error until those files are uploaded to v0.1.0 with `gh release upload`. |
 | App icon | Made and wired in; not seen in a built Mac or Windows app. |
+| Cloud editor (`cloud/`) | **Works in Docker on Linux, never deployed.** The app runs with no screen in a container and is streamed to the site's `/edit` page behind the owner's Firebase sign-in. Image builds; gateway security test passes (38 checks); page tested in a browser against the container with test certificates. `cloud/deploy.sh` (Cloud Run) has not been run: no Google Cloud access where it was built. See [cloud/README.md](cloud/README.md). |
 | Web version of the game UI (`ui/`) | Routes tested; the page itself not opened in a browser against the editor. |
 
 If a later commit message or this table says otherwise, trust the later one.
@@ -375,4 +376,5 @@ there. Consequences:
 | `scripts/startup/vse_standalone_startup.py` | Starts everything; Automation panel |
 | `tools/vse_mcp/vse_mcp.py` | MCP bridge (Python standard library only) |
 | `tests/vse/` | Tests |
+| `cloud/` | Cloud editor: gateway (sign-in check, stream relay), container image, Cloud Run deploy script |
 | `release/vse/icon/` | App icon sources (`la_1024.png`, `.icns`, `.ico`) |
