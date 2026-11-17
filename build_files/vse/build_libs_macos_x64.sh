@@ -26,6 +26,13 @@ LOG="$DEPS_BUILD/deps.log"
 # Same value as `make deps` in GNUmakefile, for reproducible archives.
 export SOURCE_DATE_EPOCH=1745584760
 
+# Some source archives (e.g. flac) hold UTF-8 file names that CMake can't extract under the
+# plain "C" locale, which is what a script started outside Terminal often gets.
+if [ -z "${LANG:-}" ] || [ "${LANG:-}" = "C" ]; then
+  export LANG=en_US.UTF-8
+fi
+export LC_CTYPE="${LANG}"
+
 mkdir -p "$DEPS_BUILD"
 echo "Building libraries in $DEPS_BUILD (log: $LOG), installing to $LIBDIR"
 
