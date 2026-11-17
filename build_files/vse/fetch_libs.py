@@ -98,6 +98,9 @@ def main():
         run(["git", "lfs", "pull", "--include=" + include], cwd=dest)
 
     # Source-tree LFS files (startup.blend, icons, fonts, ...), excluding test data.
+    # LFS has to be enabled in this repository too, not only in the library checkout above
+    # (without it `git lfs pull` skips the checkout and leaves pointer files).
+    run(["git", "lfs", "install", "--local"], cwd=ROOT)
     run(["git", "config", "lfs.url", SOURCE_LFS_URL], cwd=ROOT)
     run(["git", "lfs", "pull", "--exclude=tests/**"], cwd=ROOT)
     print("Libraries ready in", dest)

@@ -110,7 +110,11 @@ fi
 
 if [ -z "$(find "lib/$LIB_PLATFORM/ffmpeg" -name 'libavcodec.a' -size +1000k 2>/dev/null)" ] || \
    [ "$(wc -c < release/datafiles/startup.blend)" -lt 1024 ]; then
-  say_step "Downloading libraries (about 1.5 GB, first run only)"
+  if [ "$LIB_PLATFORM" = "macos_x64" ]; then
+    say_step "Downloading the startup file, icons and fonts (first run only)"
+  else
+    say_step "Downloading libraries (about 1.5 GB, first run only)"
+  fi
   python3 build_files/vse/fetch_libs.py --platform "$LIB_PLATFORM"
 fi
 
