@@ -9,8 +9,8 @@
 #   cloud/backup_dataset.sh <data folder> [repository URL]
 #
 # The repository defaults to this checkout's origin. Safe to run as often as you like: it
-# commits only when something changed. It refuses to push if the repository is public (when
-# the gh CLI can tell) or if anything in the dataset looks like a credential.
+# commits only when something changed. It refuses to push if the repository is public (asked
+# of GitHub with no sign-in) or if anything in the dataset looks like a credential.
 
 set -euo pipefail
 
@@ -24,13 +24,18 @@ CLONE="$DATA/dataset-backup"
 [ -d "$SOURCE" ] || { echo "Nothing to back up yet: $SOURCE does not exist."; exit 0; }
 
 # Never publish it: the dataset holds what was asked and done, which is private.
-if command -v gh >/dev/null 2>&1; then
+# Asked with no sign-in: GitHub shows a private repository to nobody (404) and a public one
+# to everybody (200), so this works without the gh CLI. If GitHub can't be asked, stop.
+case "$URL" in *github.com*)
   SLUG="$(printf '%s' "$URL" | sed -E 's#^.*github\.com[:/]##; s#\.git$##')"
-  VISIBILITY="$(gh api "repos/$SLUG" --jq .visibility 2>/dev/null || true)"
-  if [ "$VISIBILITY" = "public" ]; then
+  CODE="$(curl -s -o /dev/null -w '%{http_code}' -m 20 -A latest-avenue-dataset-backup \
+          "https://api.github.com/repos/$SLUG" || true)"
+  if [ "$CODE" = "200" ]; then
     echo "Stopped: $SLUG is a public repository. The dataset only goes to a private one."; exit 1
+  elif [ "$CODE" != "404" ]; then
+    echo "Stopped: could not ask GitHub whether $SLUG is private (got '$CODE'). Nothing was backed up."; exit 1
   fi
-fi
+;; esac
 
 # Anything that looks like a credential stops the backup. Nothing in the dataset should:
 # the server never writes tokens to it. This is a second lock, not the first.

@@ -40,11 +40,23 @@ if (-not $Url) { $Url = (git -C $Repo remote get-url origin) }
 if (-not $Url) { Fail "no repository address. Pass -Url." }
 
 # Never publish it: the dataset holds what was asked and done, which is private.
-if (Get-Command gh -ErrorAction SilentlyContinue) {
+# Asked with no sign-in: GitHub shows a private repository to nobody (404) and a public one to
+# everybody (200). This works without the gh CLI, which most PCs don't have. If GitHub can't
+# be asked, stop rather than guess.
+if ($Url -match 'github\.com') {
     $slug = ($Url -replace '^.*github\.com[:/]', '') -replace '\.git$', ''
-    $visibility = ""
-    Quiet { $script:visibility = (gh api "repos/$slug" --jq .visibility) }
-    if ($visibility -eq "public") { Fail "$slug is a public repository. The dataset only goes to a private one." }
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    $visible = $null
+    try {
+        $info = Invoke-RestMethod -UseBasicParsing -TimeoutSec 20 -Headers @{ "User-Agent" = "latest-avenue-dataset-backup" } "https://api.github.com/repos/$slug"
+        $visible = -not $info.private
+    } catch {
+        $status = 0
+        if ($_.Exception.Response) { $status = [int]$_.Exception.Response.StatusCode }
+        if ($status -eq 404) { $visible = $false }
+    }
+    if ($null -eq $visible) { Fail "could not ask GitHub whether $slug is private (offline or rate-limited). Nothing was backed up." }
+    if ($visible) { Fail "$slug is a public repository. The dataset only goes to a private one." }
 }
 
 # Anything that looks like a credential stops the backup (a second lock: the server never
