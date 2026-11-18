@@ -103,13 +103,83 @@ def test_site_tools(lines):
             check("music edit lays out", lay["events"] == r["result"]["events"])
 
 
+def test_import_tools():
+    """The Drive import queue through the editor's tools, against a stand-in Drive."""
+    import shutil
+    import time
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import test_imports as ti
+    work = tempfile.mkdtemp()
+    data = os.path.join(work, "data")
+    os.makedirs(os.path.join(data, "media"))
+    os.environ["VSE_DATA"] = data
+    files = ti.build_drive(work)
+    drive = ti.FakeDrive(files, valid=(ti.GOOD,), throttle=0.004)
+    os.environ["VSE_DRIVE_API"] = drive.url
+    from vse_standalone.assembly import imports
+    imports.CHUNK = 8192
+    imports._jobs.clear()
+
+    def poll(jid, cond, limit=60):
+        t0 = time.time()
+        while time.time() - t0 < limit:
+            st = api.call("import_status", {"job_id": jid})
+            if cond(st):
+                return st
+            time.sleep(0.05)
+        return api.call("import_status", {"job_id": jid})
+
+    try:
+        r = api.call("import_start", {"access_token": ti.GOOD, "items": [
+            {"drive_id": "root", "kind": "folder", "name": "Shoot", "recursive": True},
+            {"drive_id": "big1", "kind": "file", "name": "big1.mov"}]})
+        jid = r["job_id"]
+        st = poll(jid, lambda s: any(i["drive_id"] == "big1" and i["bytes_done"] > 50000 for i in s["items"]))
+        st = api.call("import_pause", {"job_id": jid})
+        st = poll(jid, lambda s: next(i for i in s["items"] if i["drive_id"] == "big1")["state"] == "paused")
+        check("import tools: pause mid-file", st["state"] == "paused", st["state"])
+        st = api.call("import_edit", {"job_id": jid, "add": [{"drive_id": "small", "kind": "file", "name": "small.mov"}]})
+        check("import tools: add while paused", any(i["drive_id"] == "small" and i["state"] == "queued" for i in st["items"]))
+        api.call("import_resume", {"job_id": jid, "access_token": ti.GOOD})
+        st = poll(jid, lambda s: s["state"] in ("done", "failed"))
+        check("import tools: resume to done, totals add up", st["state"] == "done"
+              and st["totals"]["done"] == st["totals"]["files"] == 7, (st["state"], st["totals"]))
+        lm = api.call("list_media", {})
+        ids = {m["drive_id"] for m in lm["imported"]}
+        check("list_media: imported files with drive_id, size, duration, kind",
+              {"c1", "c2", "b1", "big1", "small", "pdf", "doc"} <= ids and all(
+                  {"drive_id", "name", "size", "duration", "kind"} <= set(m) for m in lm["imported"]), ids)
+        r = api.call("remove_media", {"drive_ids": ["small"]})
+        check("remove_media", r["removed"] == ["small"] and not any(
+            m["drive_id"] == "small" for m in api.call("list_media", {})["imported"]), r)
+        old = api.call("fetch_drive_folder", {"folder_id": "https://drive.google.com/drive/folders/sub?usp=x",
+                                              "access_token": ti.GOOD})
+        t0 = time.time()
+        while time.time() - t0 < 60:
+            js = api.call("job_status", {"job": old["job"]})
+            if js["state"] != "running":
+                break
+            time.sleep(0.1)
+        check("fetch_drive_folder (old tool) runs on the queue; job_status reports it",
+              js["state"] == "done" and js["result"]["files"] and js["result"]["files"][0]["skipped"], js)
+        try:
+            api.call("import_status", {"job_id": "nope"})
+            check("import_status: unknown job is a readable error", False)
+        except api.APIError:
+            check("import_status: unknown job is a readable error", True)
+    finally:
+        drive.close()
+        shutil.rmtree(work, ignore_errors=True)
+
+
 def main():
     names = {t["name"] for t in api.describe()}
     wanted = {"probe_media", "read_screenplay", "assembly_status", "start_assembly", "assembly_job",
               "get_editing_script", "edit_editing_script", "choose_take", "set_line_cut",
               "lay_out_editing_script", "render_editing_script", "job_status", "export_sequence",
               "fetch_drive_folder", "upload_to_drive", "save_upload", "set_clip_sync",
-              "take_thumbnails"}
+              "take_thumbnails", "import_start", "import_status", "import_pause", "import_resume",
+              "import_edit", "import_cancel", "remove_media", "list_media"}
     check("assembly tools are registered", wanted <= names, wanted - names)
 
     s = api.call("read_screenplay", {"filepath": os.path.join(samples, "script.pdf")})
@@ -165,6 +235,7 @@ def main():
         check("export_sequence from the editor", r["events"] == len(with_cut) and os.path.exists(seq), r)
 
     test_site_tools(lines)
+    test_import_tools()
 
     out = os.path.join(tempfile.mkdtemp(), "frame.png")
     r = api.call("render_frame", {"frame": 30, "filepath": out})

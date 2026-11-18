@@ -420,6 +420,8 @@ def list_media(folder: str = "", kind: typing.Optional[str] = None, limit: int =
     :arg folder: Folder to look in, absolute or relative to the media folder. Default: the media folder.
     :arg kind: Only this kind: video, audio, image, lut, project or text.
     :arg limit: Most files to return.
+
+    Also returns "imported": every file imported from Google Drive, with its drive_id.
     """
     root = media_root()
     path = folder if os.path.isabs(folder) else os.path.join(root, folder)
@@ -440,8 +442,20 @@ def list_media(folder: str = "", kind: typing.Optional[str] = None, limit: int =
             files.append({"path": full, "name": name, "kind": file_kind,
                           "megabytes": round(os.path.getsize(full) / 1e6, 2)})
             if len(files) >= limit:
-                return {"folder": path, "folders": folders, "files": files, "truncated": True}
-    return {"folder": path, "folders": folders, "files": files, "truncated": False}
+                return {"folder": path, "folders": folders, "files": files, "truncated": True,
+                        "imported": _imported()}
+    return {"folder": path, "folders": folders, "files": files, "truncated": False,
+            "imported": _imported()}
+
+
+def _imported():
+    """What has been imported from Google Drive (drive_id, name, size, duration, kind, path),
+    so the site can mark files "already added"."""
+    try:
+        from .assembly import imports
+        return imports.imported()
+    except Exception:
+        return []
 
 
 # -----------------------------------------------------------------------------

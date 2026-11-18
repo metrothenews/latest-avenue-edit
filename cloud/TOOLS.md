@@ -37,7 +37,8 @@ until the editor restarts. (`assembly_job` is the older name of `job_status`; bo
 | Step | Tool | Params | Result |
 |---|---|---|---|
 | 0 | `assembly_status` | none | `{python, packages, transcription, image_model, device, tools}`: is the PC set up |
-| 1 | `fetch_drive_folder` → job | `folder_id` (the id, or the folder's drive.google.com link), `access_token` (see "Google Drive sign-in" below), `dest` (optional, default `drive/<folder_id>`) | job `result`: `{folder, files: [{name, path, bytes, skipped, kind}], fetched}`. Google Docs come down as PDF. Then use `drive/<folder_id>` as `media_folder` |
+| 1 | `import_start` → `import_status` … | the import queue, see "Import queue" below (preferred) |
+| 1 | `fetch_drive_folder` → job (older) | `folder_id` (the id, or the folder's drive.google.com link), `access_token` (see "Google Drive sign-in" below), `dest` (optional, default `drive/<folder_id>`) | job `result`: `{folder, files: [{name, path, bytes, skipped, kind}], fetched}`. Google Docs come down as PDF. Then use `drive/<folder_id>` as `media_folder` |
 | 1 | `probe_media` | `filepath` (file or folder) | `{folder, files: [{path, name, kind: video/audio/image, duration, fps, width, height, timecode, audio_tracks, error?}]}` |
 | 2 | `save_upload` | `name` (e.g. `script.pdf`), `data_base64` (≤ 700 KB decoded per call), `folder` (default `uploads`), `append` (send big files in parts: first call without, the rest with) | `{filepath, relative, bytes}`; pass `relative` (e.g. `uploads/script.pdf`) to `read_screenplay` / `start_assembly` |
 | 2 | `read_screenplay` | `filepath` (.pdf/.fountain/.txt), `include_text` | `{title, characters: [{name, lines}], scenes: [{id, heading, int_ext, location, time, elements: [{id, type, character?, text, parentheticals?, extensions?}]}], dialogue_lines}` |
@@ -68,6 +69,54 @@ until the editor restarts. (`assembly_job` is the older name of `job_status`; bo
   take-swap UI needs). `heard` is what was actually said in that take.
 - `json`: the whole document (format in `scripts/modules/vse_standalone/assembly/editing_script.py`),
   including `media[clip].shots[].thumbnail` (JPEG paths for thumbnails) and word timings.
+
+## Import queue (Google Drive → the editor)
+
+A queue the user builds, edits, pauses, resumes and cancels. Use these instead of
+`fetch_drive_folder` (still there: it now runs on this queue and reports through `job_status`).
+`access_token` is the Google Drive token described in "Google Drive sign-in" below.
+
+| Tool | Params | Result |
+|---|---|---|
+| `import_start` | `access_token`, `items: [{drive_id, kind: "file"\|"folder", name, recursive: true}]`, `proxies` (default true) | `{job_id}` |
+| `import_status` | `job_id` | status (below) |
+| `import_pause` | `job_id` | status. The file in flight stops; its partial download is kept |
+| `import_resume` | `job_id`, `access_token` | status. The partial file continues with an HTTP Range request. Also the way out of `needs_token` |
+| `import_edit` | `job_id`, `add: [items]`, `remove: [drive_id]`, `access_token` (optional) | status. While running or paused (or after done: adding restarts it). Removing a queued item drops it; removing the one in flight aborts it and deletes its partial; removing a folder removes its unfinished children; finished files stay (use `remove_media`) |
+| `import_cancel` | `job_id` | status. Stops everything, deletes partials, keeps finished files |
+| `remove_media` | `drive_ids: [...]` | `{removed: [...], not_found: [...]}`: finished imports deleted from the project and the disk (with their proxies) |
+| `list_media` | `{}` | the existing media listing `{folder, folders, files, truncated}` **plus `imported: [{drive_id, name, size, bytes, duration, kind, path, proxy}]`**: what is already in the project, so the site can mark files "already added". (`list_media` already existed with a different result; `imported` is the new part.) |
+
+Status:
+
+```json
+{"job_id": "...", "state": "running|paused|needs_token|cancelled|done|failed", "error": null,
+ "totals": {"files": 0, "bytes": 0, "bytes_done": 0, "done": 0, "failed": 0},
+ "items": [{"drive_id": "...", "name": "...", "kind": "file|folder", "parent_id": null,
+            "size": 0, "bytes_done": 0,
+            "state": "queued|listing|downloading|paused|done|failed|skipped|removed",
+            "error": "only when failed", "reason": "e.g. already in project / cancelled"}]}
+```
+
+- **Folders** are expanded on the server (Drive `files.list`, recursive unless `recursive:
+  false`): video, audio, images, PDFs, and Google Docs (exported as PDF, for scripts). Children
+  follow their folder in the list and carry `parent_id`. A folder's `state` is `listing` while
+  it is read, then sums up its children: `downloading`, `paused`, `queued`, `done` or `failed`.
+  `size` is null for folders and for Google Docs until exported.
+- **Order and dedupe:** one file at a time, in list order. A file already in the project (by
+  Drive id) is `skipped` with `reason: "already in project"`, at once.
+- **Totals** count files only (not folders, not removed items); skipped files count as done.
+- **Where files go:** `drive/<folder name>/<subfolders>/<file>` in the media folder; single
+  files in `drive/`. Same name from another Drive file: `name (2).ext`. Every file is checked
+  against Drive's size and MD5, probed (ffprobe), and videos get a 140p proxy (`proxies`).
+  `list_media().imported[].path` is what `start_assembly`'s `media_folder` should point at
+  (e.g. `drive/Shoot`).
+- **Token:** held in memory for the job only, never written. When Drive answers 401 (expired)
+  the job goes to `needs_token`; the file in flight keeps its partial; call `import_resume`
+  with a fresh token.
+- **Restart:** queue state is saved after every change, so after an editor restart
+  `import_status` shows the job `paused` with partials intact; `import_resume` continues.
+- **Polling:** every 1 s while `running`; progress (`bytes_done`) is updated continuously.
 
 ## Google Drive sign-in: what the site sends
 

@@ -198,6 +198,11 @@ def job_status(job: str) -> dict:
     the last log lines, and its result when done."""
     entry = _jobs.get(job)
     if entry is None:
+        from .assembly import imports
+        try:
+            return _import_job_status(imports.get(job))
+        except KeyError:
+            pass
         raise api.APIError("No job {!r} (jobs are forgotten when the editor restarts)".format(job))
     code = entry["proc"].poll()
     try:
@@ -417,24 +422,127 @@ def _json_result(entry):
 
 @tool(mutates=False)
 def fetch_drive_folder(folder_id: str, access_token: str, dest: typing.Optional[str] = None) -> dict:
-    """Download a Google Drive folder (with subfolders) into the media folder, in the background.
+    """Download a whole Google Drive folder into the media folder (older tool: the same import
+    queue as import_start, with the folder's files placed directly in dest).
 
-    Footage, photos, audio and PDFs are fetched; Google Docs come down as PDF. Files already
-    there are skipped. Poll with job_status; its result lists the files.
-    :arg folder_id: The folder's id (the last part of its drive.google.com address).
-    :arg access_token: A Google OAuth access token with drive.readonly. Used for this job only, not stored.
+    Poll with job_status (or import_status). Files already imported are skipped.
+    :arg folder_id: The folder's id (or its drive.google.com link).
+    :arg access_token: A Google OAuth access token with drive.readonly. Kept in memory for this import only.
     :arg dest: Local folder (default: drive/<folder_id> in the media folder).
     """
+    from .assembly import imports
     folder_id = folder_id.strip().rstrip("/").rsplit("/", 1)[-1].split("?")[0]
     out = _out_path(dest or os.path.join("drive", folder_id))
-    os.makedirs(out, exist_ok=True)
-    meta = os.path.join(out, ".drive")
-    os.makedirs(meta, exist_ok=True)
-    args = [_python(), "-m", "vse_standalone.assembly.drive", "fetch", folder_id, out]
-    return _start_job("fetch_drive_folder", args, os.path.join(meta, "fetch.log"),
-                      os.path.join(meta, "fetch.json"), _json_result,
-                      env_extra={"GOOGLE_ACCESS_TOKEN": access_token},
-                      stdout=os.path.join(meta, "fetch.json"))
+    try:
+        job = imports.start(access_token, [{"drive_id": folder_id, "kind": "folder", "name": folder_id,
+                                            "recursive": True, "flat": True}], dest=out)
+    except ValueError as ex:
+        raise api.APIError(str(ex)) from None
+    return {"job": job.id, "job_id": job.id, "kind": "fetch_drive_folder", "output": out}
+
+
+def _import_job_status(job):
+    """An import job seen through job_status (for fetch_drive_folder callers)."""
+    st = job.status()
+    state = {"done": "done", "failed": "failed", "cancelled": "failed"}.get(st["state"], "running")
+    files = [{"name": os.path.basename(it.get("path") or "") or it["name"], "path": it.get("path"),
+              "bytes": it.get("size"), "skipped": it["state"] == "skipped", "drive_id": it["drive_id"]}
+             for it in job.items if it["kind"] == "file" and it["state"] in ("done", "skipped")]
+    log = ["{:s}: {:s}".format(it["name"], it["state"] + (" ({:s})".format(it["error"]) if it.get("error") else ""))
+           for it in job.items if it["kind"] == "file"][-40:]
+    if st["state"] == "needs_token":
+        log.append("sign in to Drive again")
+    return {"job": job.id, "kind": "import", "state": state, "seconds": round(time.time() - job.created, 1),
+            "output": job.dest, "log": log,
+            "result": {"folder": job.dest, "files": files,
+                       "fetched": sum(1 for f in files if not f["skipped"])} if state == "done" else None,
+            "import": st}
+
+
+# -----------------------------------------------------------------------------
+# The import queue (cloud/TOOLS.md, "Import queue").
+
+def _import(job_id):
+    from .assembly import imports
+    try:
+        return imports.get(job_id)
+    except KeyError as ex:
+        raise api.APIError(str(ex).strip("'\"")) from None
+
+
+def _items_arg(items):
+    out = []
+    for it in items or []:
+        if not isinstance(it, dict) or not it.get("drive_id"):
+            raise api.APIError("Each item needs a drive_id (and kind: file or folder)")
+        kind = it.get("kind", "file")
+        if kind not in ("file", "folder"):
+            raise api.APIError("kind must be 'file' or 'folder'")
+        out.append({"drive_id": str(it["drive_id"]).strip().rstrip("/").rsplit("/", 1)[-1].split("?")[0],
+                    "kind": kind, "name": it.get("name"), "recursive": it.get("recursive", True)})
+    return out
+
+
+@tool(mutates=False)
+def import_start(access_token: str, items: typing.List[dict], proxies: bool = True) -> dict:
+    """Start importing files and folders from Google Drive into the media folder (drive/).
+    One file at a time, in order; folders are expanded (media and PDFs only, recursively).
+
+    :arg access_token: Google OAuth access token (drive.readonly). Kept in memory only.
+    :arg items: [{drive_id, kind: "file"|"folder", name, recursive}].
+    :arg proxies: Also make a 140p copy of each video for light thumbnails.
+    """
+    from .assembly import imports
+    try:
+        job = imports.start(access_token, _items_arg(items), proxies=proxies)
+    except ValueError as ex:
+        raise api.APIError(str(ex)) from None
+    return {"job_id": job.id}
+
+
+@tool(mutates=False)
+def import_status(job_id: str) -> dict:
+    """State of an import: running / paused / needs_token / cancelled / done / failed, totals,
+    and every item with its progress."""
+    return _import(job_id).status()
+
+
+@tool(mutates=False)
+def import_pause(job_id: str) -> dict:
+    """Pause an import. The file in flight stops; its partial download is kept."""
+    return _import(job_id).pause()
+
+
+@tool(mutates=False)
+def import_resume(job_id: str, access_token: str) -> dict:
+    """Resume a paused import (or one waiting for a fresh sign-in); the partial file continues
+    where it stopped."""
+    return _import(job_id).start(access_token)
+
+
+@tool(mutates=False)
+def import_edit(job_id: str, add: typing.Optional[typing.List[dict]] = None,
+                remove: typing.Optional[typing.List[str]] = None,
+                access_token: typing.Optional[str] = None) -> dict:
+    """Add items to an import or remove them, while it runs or is paused. Removing the file in
+    flight aborts it; removing a folder removes its unfinished children; finished files stay
+    (remove_media deletes them)."""
+    return _import(job_id).edit(_items_arg(add), remove or [], access_token)
+
+
+@tool(mutates=False)
+def import_cancel(job_id: str) -> dict:
+    """Stop an import: unfinished items are dropped and their partial downloads deleted;
+    finished files stay in the project."""
+    return _import(job_id).cancel()
+
+
+@tool(mutates=False)
+def remove_media(drive_ids: typing.List[str]) -> dict:
+    """Remove imported files (by Drive id) from the project and delete them from the disk,
+    with their proxies."""
+    from .assembly import imports
+    return imports.remove_media(drive_ids)
 
 
 @tool(mutates=False)

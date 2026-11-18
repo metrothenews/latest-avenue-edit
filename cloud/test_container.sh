@@ -45,6 +45,8 @@ run "Assembly: script, sync, transcription, matching, grouping, edits, render, e
 run "Editor tools in Blender: sequence, takes, uploads, sync fix, thumbnails, song job" \
     $APP/blender -b --factory-startup --python $T/test_assembly_editor.py -- "$SHOOT"
 run "Google Drive client (stand-in server)" python3 $T/test_drive.py
+run "Drive import queue: pause/resume byte-exact, cancel, edit, dedupe, needs_token, restart" \
+    python3 $T/test_imports.py
 run "Editor basics (LUTs, ripple edits, export)" \
     $APP/blender -b --factory-startup --python $T/test_vse.py
 
