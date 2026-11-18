@@ -17,3 +17,16 @@ one place. Newest at the bottom. Mark an entry **overruled** rather than deletin
 | 2026-11-18 | Models run on CUDA when available, CPU otherwise. | The PC has an NVIDIA RTX card; the cloud machine has none. | Coordinating session |
 | 2026-11-18 | Sam's media (footage, audio, scripts from his Drive) is never committed to the repository. | Sam's instruction, via the coordinating session. | Sam |
 | 2026-11-18 | Builder: picture grouping uses MobileCLIP2-S0 when installed, else a model-free colour signature; the LLM is called once, only to order scenes when there's no script, through an OpenAI-compatible URL (`VSE_ASSEMBLY_LLM_URL` / `LLM_BASE_URL`), and timecode order is kept when none is set. | From the builder's commit `bc8865e7` and `assembly/llm.py`. | Builder |
+| 2026-11-18 | Testing is done in a Linux container (`cloud/Dockerfile`, `Dockerfile.test`) on generated media: 124×70 (16:9), 24 fps, 1 s clips without speech, dialogue takes as long as their line. Supersedes the earlier 12×12 test shoot. | Sam | Sam (via coordinator) |
+| 2026-11-18 | The PC worker is stood down; the private production repo is not used. | Coordinator's call. | Coordinator |
+| 2026-11-18 | Real clips from Sam's "culture clips collections" may be used once the container passes: downloaded one by one, downscaled to 140p, never committed. | Real footage without storing Sam's media. | Coordinator |
+| 2026-11-18 | Guess: the chat panel is hidden behind a setting (off by default), not deleted. Answers the earlier open question unless Sam overrules. | Sam's plan says no chat; deleting working code is his call. | Coordinator / design worker |
+| 2026-11-18 | PC answered: NVIDIA RTX 3050 (8 GB), 64 GB RAM. | Sam | Sam (via coordinator) |
+| 2026-11-18 | Builder guess: long steps run as background jobs with job ids and polling. | The site can't hold a request open for minutes. | Builder |
+| 2026-11-18 | Builder guess: a recorder file syncs to a clip only if it overlaps ≥60% of the clip and the raw-sound match is ≥0.3. | Avoids false pairings. | Builder |
+| 2026-11-18 | Builder guess: in numbered ad scripts the speaker is NARRATOR, and text in [brackets] is on screen. | Sam's ad script layout. | Builder |
+| 2026-11-18 | Builder guess: music assumes 4/4, cuts every 2 bars in instrumental parts and on the beat before each sung line. | Common music-video cutting. | Builder |
+| 2026-11-18 | Builder guess: sequence export uses the official OpenTimelineIO adapters. | Maintained, standard. | Builder |
+| 2026-11-18 | Design guess: confidence labels: Strong ≥0.8, Likely ≥0.5. | Simple wording for non-technical users. | Design worker |
+| 2026-11-18 | Design guess: exports map Resolve → OTIO, Premiere → FCP7 XML, Final Cut → FCPXML; exports go to the Drive folder "latest avenue exports". | Each editor's most reliable import. | Design worker |
+| 2026-11-18 | Design guess: the edit files live in a hidden `.latest-avenue` folder. | Keep the user's Drive tidy. | Design worker |

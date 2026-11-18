@@ -1,8 +1,9 @@
 # Status
 
 Updated by the documentation worker from the builder's pushed commits (all branches). Last
-checked: 2026-11-18 ~05:45 UTC: `origin/main` at `dcfe4331`, `origin/claude/assembly-pipeline`
-at `067823cf`.
+checked: 2026-11-18 ~07:30 UTC: `origin/main` at `dcfe4331`; builder at
+`claude/assembly-pipeline` `ff12b07c`; website at latest-avenue `claude/edit-design` `43475e7`
+(reported by the coordinator, not checked from here).
 
 **Deadline:** a working consumer-facing app by noon Eastern today (17:00 UTC).
 
@@ -14,7 +15,9 @@ at `067823cf`.
 | Documentation | `session_01RU4b7z6i76RXPGnDfyCTUq` | latest-avenue-edit, `docs/dev-plan` | These docs |
 | Design | `session_01RU4b7zATq5Twqv5ypgg6Mc` | latest-avenue, `claude/edit-design` | The `/edit` website flow |
 
-A coordinating session in the latest-avenue repo relays Sam's answers and updates.
+A coordinating session in the latest-avenue repo (`session_01RU4b82aSXQhYSqYKHD9jnW` since
+~07:30 UTC, replacing `session_01RU4b7z56N1Bxev4ADDqxV8`) relays Sam's answers and updates.
+The PC worker has been stood down.
 
 ## What works now (before this plan)
 
@@ -34,42 +37,43 @@ From the README's status table, which has the details and caveats:
 
 ## The plan in [PRODUCT.md](PRODUCT.md)
 
-Pushed by the builder to `claude/assembly-pipeline` (not merged to `main`), in
-`scripts/modules/vse_standalone/assembly/`, command line in `tools/vse_assembly/assemble.py`.
-The commit messages don't say whether any of it was run or tested; treat it as unverified
-until a commit or the builder says so.
+"Done in the container" means it runs and passes tests in a Linux Docker container with no
+GPU (`cloud/Dockerfile`, `Dockerfile.test`) on generated media. All suites and
+`docker run --rm latest-avenue-edit:test` passed there (builder commits up to `ff12b07c`).
+It has not been run on Sam's footage, on the PC, or on a GPU.
 
-- `probe.py`: ffprobe media info.
-- `screenplay.py`: `pdftotext -layout` + screenplay rules.
-- `transcribe.py`: faster-whisper word timings, cached.
-- `match.py`: takes matched to script lines by fuzzy word-by-word sequence alignment
-  (rapidfuzz, or difflib without it), with coverage / accuracy / confidence scores; handles
-  pickups. No model.
-- `visual.py`: ffmpeg shot detection, thumbnails, MobileCLIP2-S0 embeddings (or a model-free
-  colour signature), clustering into set-up groups.
-- `editing_script.py`: the editing script (`*.edit.json`, version 1): per line the chosen
-  take, in/out, ranked alternatives, cover picture for audio-only lines; per clip `slate`
-  and `supervisor` fields (the reserved slot). Text round trip: export as screenplay text,
-  edit, read back with footage following the lines.
-- `pipeline.py`: probe → script → transcribe → match → group → editing script; without a
-  script, a rough one from what was said, and one LLM request for scene order (`llm.py`).
-- `render.py`: render an editing script straight to video with ffmpeg.
-- Commands: `probe`, `script`, `assemble`, `text`, `apply`, `take`, `summary`, `render`.
-- `tests/vse/assembly/make_samples.py`: generates a test shoot (script PDF, spoken takes via
-  espeak-ng, V.O., B-roll, photo, `truth.json`). No test that runs the pipeline against it
-  has been pushed yet.
+### Builder (latest-avenue-edit, `claude/assembly-pipeline`, not merged to `main`)
 
-## Half-built / not yet pushed
+Done in the container:
 
-- Laying the editing script out on the editor's timeline: `editing_script.py` refers to
-  `assembly_tools.lay_out`, which is not in the pushed commits.
-- Not exposed as editor tools / `/api/rpc` yet.
-- No sync step for separately recorded audio yet.
-- No music-driven (lyrics) mode in the assembly yet; the older `tools/vse_lyrics/` exists.
-- No Google Drive connection, no screenplay-style editor on `/edit` (design worker's job in
-  latest-avenue), no Resolve / Premiere / Final Cut export.
+- Script parsing: screenplays and numbered ad/social scripts.
+- Media info (ffprobe), filename slate parsing (takes from file names).
+- Sound sync: timecode, then waveform, then clap.
+- Transcription (faster-whisper), take-to-line matching, shot grouping (colour signature
+  only; MobileCLIP couldn't be installed in the sandbox).
+- The editing script, the Blender lay-out into a sequence, ffmpeg render.
+- Sequence export: OTIO, FCPXML, FCP7 XML, EDL. Each was read back OK; none has been opened
+  in Resolve, Premiere or Final Cut yet.
+- Music mode: beat tracking, lyric lines start shots. Known issue: a song at ~170 BPM locks
+  to half speed.
+- Google Drive client: fetch a folder, upload. Tested against a stand-in Drive server only.
+- Editor tools for the site: `save_upload`, `start_assembly` (with `song` / `lyrics`),
+  `set_clip_sync`, `take_thumbnails`; background jobs with job ids and polling.
+
+Not tested: the GPU path, Windows `cloud/pc/test.ps1` / `install.ps1`, a real Drive token.
+
+### Website (latest-avenue, `claude/edit-design`, merged into `claude/great-johnson-glhijj`)
+
+A guided `/edit` flow: what are you making → footage → script or song → assembly → review
+(with confidence and sync labels) → sound panel → export to Drive ("latest avenue exports").
+The live sequencer moved to `/edit/sequencer`. The assistant chat is kept but off by
+default. The build passes; a signed-in check on a phone is still to do.
 
 ## Next
 
-Lay-out in the editor, editor tools for each step, a test run against `make_samples.py`
-output, then the sync step and the website flow.
+- Run on real clips from Sam's "culture clips collections" (one by one, downscaled to 140p,
+  never committed).
+- Signed-in phone check of the website flow.
+- Open the exported sequences in Resolve, Premiere and Final Cut.
+- GPU and Windows runs on the PC; a real Drive token.
+- Fix the half-speed tempo lock at ~170 BPM.
