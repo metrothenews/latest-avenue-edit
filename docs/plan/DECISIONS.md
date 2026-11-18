@@ -30,3 +30,6 @@ one place. Newest at the bottom. Mark an entry **overruled** rather than deletin
 | 2026-11-18 | Design guess: confidence labels: Strong ≥0.8, Likely ≥0.5. | Simple wording for non-technical users. | Design worker |
 | 2026-11-18 | Design guess: exports map Resolve → OTIO, Premiere → FCP7 XML, Final Cut → FCPXML; exports go to the Drive folder "latest avenue exports". | Each editor's most reliable import. | Design worker |
 | 2026-11-18 | Design guess: the edit files live in a hidden `.latest-avenue` folder. | Keep the user's Drive tidy. | Design worker |
+| 2026-11-18 | Guess: exported sequences start at timecode 01:00:00:00 (`export.py`, `start_timecode=3600`). | Usual start in Resolve, Premiere and Final Cut. | Builder |
+| 2026-11-18 | MobileCLIP2-S0 (threshold 0.80) is required for picture grouping on real footage; the colour signature is only a fallback. | Measured on 71 of Sam's clips: 94% vs 59% purity. | Builder (measured) |
+| 2026-11-18 | Exports are checked without the target apps (Apple's FCPXML 1.8 DTD, FCP 7 XML structure, CMX 3600 rules) until someone opens them in Resolve, Premiere and Final Cut. | None of the three apps is available to the workers. | Builder |

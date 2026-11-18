@@ -1,9 +1,9 @@
 # Status
 
 Updated by the documentation worker from the builder's pushed commits (all branches). Last
-checked: 2026-11-18 ~07:30 UTC: `origin/main` at `dcfe4331`; builder at
-`claude/assembly-pipeline` `ff12b07c`; website at latest-avenue `claude/edit-design` `7acd32e`
-(reported by the coordinator, not checked from here).
+checked: 2026-11-18 ~13:10 UTC: `origin/main` at `dcfe4331`; builder at
+`claude/assembly-pipeline` `7772e174`; website at latest-avenue `claude/great-johnson-glhijj`
+`d2b6c96` (reported by the coordinator, not checked from here).
 
 **Deadline:** a working consumer-facing app by noon Eastern today (17:00 UTC).
 
@@ -37,43 +37,52 @@ From the README's status table, which has the details and caveats:
 
 ## The plan in [PRODUCT.md](PRODUCT.md)
 
-"Done in the container" means it runs and passes tests in a Linux Docker container with no
-GPU (`cloud/Dockerfile`, `Dockerfile.test`) on generated media. All suites and
-`docker run --rm latest-avenue-edit:test` passed there (builder commits up to `ff12b07c`).
-It has not been run on Sam's footage, on the PC, or on a GPU.
+Three levels below: **works on real footage**, **tested in the container only** (Linux
+Docker, no GPU, generated media), and **untested**. Nothing has been used by Sam through the
+live site yet.
 
-### Builder (latest-avenue-edit, `claude/assembly-pipeline`, not merged to `main`)
+### Works on real footage (measured)
 
-Done in the container:
+- Picture grouping on 71 of Sam's culture clips (numbers only, no media committed):
+  MobileCLIP2-S0 at the default 0.80 gave 41 groups, 94% purity, 90% pair precision. The
+  model-free colour signature lumped most night footage together (59% purity, 19% pair
+  precision). **The picture model must be installed on the PC for good grouping.**
 
-- Script parsing: screenplays and numbered ad/social scripts.
-- Media info (ffprobe), filename slate parsing (takes from file names).
-- Sound sync: timecode, then waveform, then clap.
-- Transcription (faster-whisper), take-to-line matching, shot grouping (colour signature
-  only; MobileCLIP couldn't be installed in the sandbox).
-- The editing script, the Blender lay-out into a sequence, ffmpeg render.
-- Sequence export: OTIO, FCPXML, FCP7 XML, EDL. Each was read back OK; none has been opened
-  in Resolve, Premiere or Final Cut yet.
-- Music mode: beat tracking, lyric lines start shots. Known issue: a song at ~170 BPM locks
-  to half speed.
-- Google Drive client: fetch a folder, upload. Tested against a stand-in Drive server only.
-- Editor tools for the site: `save_upload`, `start_assembly` (with `song` / `lyrics`),
-  `set_clip_sync`, `take_thumbnails`; background jobs with job ids and polling.
+### Tested in the container only
 
-Model downloads behind strict proxies need `HF_HUB_DISABLE_XET=1` (sent to the builder by
-the coordinator; mentioned in the builder's `doc/vse/assembly_workflow.md`).
+Builder (latest-avenue-edit `claude/assembly-pipeline`, not merged to `main`):
 
-Not tested: the GPU path, Windows `cloud/pc/test.ps1` / `install.ps1`, a real Drive token.
+- Script parsing (screenplays and numbered ad scripts), media info, file-name slates, sound
+  sync (timecode → waveform → clap), transcription, take-to-line matching, the editing
+  script, Blender lay-out, ffmpeg render, music mode (beat tracking, lyric lines; a ~170 BPM
+  song locks to half speed), Drive client (against a stand-in Drive server).
+- Sequence exports (OTIO, FCPXML, FCP 7 XML, EDL), checked without the target apps
+  (`assembly/check_exports.py`): FCPXML against Apple's FCPXML 1.8 DTD, FCP 7 XML structure,
+  CMX 3600 EDL rules. Every export of both test shoots passes; the checkers catch a
+  deliberately broken file of each kind.
+- The whole `/edit` flow over the gateway's `/api/rpc`, the way the website calls it
+  (`tests/vse/test_site_flow.py`, run by `cloud/test_container.sh` against the real gateway
+  and editor with a generated test certificate): 401 without a token, editor start on the
+  first signed-in call, upload → read script → assembly job → editing script → edit → choose
+  take → thumbnails → clip sync → lay-out → render → four exports, then a music video from an
+  uploaded song and lyric sheet. All passed; editor up 9 s after the first call.
+- `HF_HUB_DISABLE_XET=1` set in the image and passed by the PC scripts, so models download
+  behind strict proxies.
 
-### Website (latest-avenue, `claude/edit-design` @`7acd32e`, merged into `claude/great-johnson-glhijj` @`7acd32e`)
+Website (latest-avenue, `claude/great-johnson-glhijj` @`d2b6c96`): the guided `/edit` flow
+(what are you making → footage → script or song → assembly → review with confidence and sync
+labels → sound panel → export to Drive "latest avenue exports"), live sequencer at
+`/edit/sequencer`, assistant chat off by default. Earlier tested at 390 px against the real
+editor running headless, Drive stubbed. Build passes.
 
-A guided `/edit` flow: what are you making → footage → script or song → assembly → review
-(with confidence and sync labels) → sound panel → export to Drive ("latest avenue exports").
-The live sequencer moved to `/edit/sequencer`. The assistant chat is kept but off by
-default. The site is wired to `save_upload`, `start_assembly` (song + lyrics), `set_clip_sync` and
-`take_thumbnails`. Tested at 390 px width against the real editor running natively
-headless, with Drive stubbed, on the old 12×12 media. The build passes; a signed-in check on
-a phone is still to do.
+### Untested
+
+- Exports opened in DaVinci Resolve, Premiere Pro or Final Cut Pro.
+- A real Google sign-in from latestavenue.com/edit, and a real Drive token.
+- The GPU path (CUDA) on the PC; the Windows scripts `cloud/pc/test.ps1` / updated
+  `install.ps1`.
+- The picture model (MobileCLIP2-S0) installed and running on the PC.
+- The site merged to its main branch and deployed.
 
 ## Repository visibility
 
@@ -84,9 +93,6 @@ committed either way.
 
 ## Next
 
-- Run on real clips from Sam's "culture clips collections" (one by one, downscaled to 140p,
-  never committed).
-- Signed-in phone check of the website flow.
-- Open the exported sequences in Resolve, Premiere and Final Cut.
-- GPU and Windows runs on the PC; a real Drive token.
-- Fix the half-speed tempo lock at ~170 BPM.
+See [GO_LIVE.md](GO_LIVE.md): update the PC's editor, merge and deploy the site, test with a
+real sign-in. After that: open the exports in the three editors, fix the half-speed tempo
+lock at ~170 BPM.
