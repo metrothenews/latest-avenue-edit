@@ -1,5 +1,11 @@
 # Scaling: from Sam's PC to an online service
 
+> **Guiding principle (Sam): "Build lean and local, then migrate to the cloud later."**
+> Everything runs on Sam's PC first, at minimal cost and complexity. Cloud pieces (P2, P3)
+> are added only when real users need them. The local design must not block that move: the
+> same Docker image, S3-compatible storage, a queue and a stable hostname. Nothing is built
+> for the cloud before it is needed.
+
 Sam's decision (2026-11-18): latest avenue edit becomes an **online service**, not an
 installed app. For now Sam's PC is a proper test server. It is built so that cloud computers
 can be added, more of them as users arrive (horizontal scaling). This page is the plan. None
