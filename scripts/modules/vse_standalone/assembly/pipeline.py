@@ -102,19 +102,33 @@ def assemble(media, script=None, *, model=None, image_backend=None, cache_dir=No
 # -----------------------------------------------------------------------------
 # No screenplay: a rough one from speech and looks.
 
-def _sentences(words, gap=0.8):
+def _utterances(words, gap=0.9, max_words=40):
+    """Split speech at pauses (a change of speaker usually has one), not at full stops."""
     out, cur = [], []
     for w in words:
-        if cur and (w["start"] - cur[-1]["end"] > gap):
+        if cur and (w["start"] - cur[-1]["end"] > gap or len(cur) >= max_words):
             out.append(cur)
             cur = []
         cur.append(w)
-        if re.search(r"[.?!]$", w["text"]):
-            out.append(cur)
-            cur = []
     if cur:
         out.append(cur)
-    return [s for s in out if len(s) >= 2]
+    return out
+
+
+def _strip_slate(words):
+    """Drop a spoken slate ("scene two, take one ... action") from the start of a take."""
+    slate = editing_script.heard_slate(words)
+    if not slate:
+        return words
+    spoken, n = "", 0
+    for n, w in enumerate(words, 1):
+        spoken += " " + w["text"]
+        if slate["heard"].split()[-1] in w["text"] and len(spoken.split()) >= len(slate["heard"].split()):
+            break
+    rest = words[n:]
+    if rest and re.sub(r"\W", "", rest[0]["text"].lower()) == "action":
+        rest = rest[1:]
+    return rest
 
 
 def rough_script(clips, transcripts, groups):
@@ -125,11 +139,14 @@ def rough_script(clips, transcripts, groups):
     lonely = [p for p in transcripts if not any(p in g for g in grouped)]
     grouped += [[p] for p in lonely]
 
-    def when(path):
-        c = by_path[path]
-        return (c.get("timecode_seconds") or 0, c.get("creation_time") or "", c["name"])
+    def when(group):
+        # Clips with a timecode set the order; photos and sound files without one don't.
+        tcs = [by_path[p]["timecode_seconds"] for p in group if by_path[p].get("timecode_seconds") is not None]
+        dates = [by_path[p]["creation_time"] for p in group if by_path[p].get("creation_time")]
+        return (0 if tcs else 1, min(tcs) if tcs else 0, min(dates) if dates else "",
+                min(by_path[p]["name"] for p in group))
 
-    grouped.sort(key=lambda g: min(when(p) for p in g))
+    grouped.sort(key=when)
     scenes = []
     for n, members in enumerate(grouped, 1):
         sid = "S{:d}".format(n)
@@ -137,9 +154,9 @@ def rough_script(clips, transcripts, groups):
         elements = []
         if speaking:
             ref = max(speaking, key=lambda p: len(transcripts[p]["words"]))
-            for sentence in _sentences(transcripts[ref]["words"]):
+            for sentence in _utterances(_strip_slate(transcripts[ref]["words"])):
                 text = " ".join(w["text"] for w in sentence)
-                if editing_script.heard_slate(sentence) and len(sentence) <= 8:
+                if len(sentence) < 2 or re.fullmatch(r"(?i)\W*cut\W*", text):
                     continue
                 elements.append({"id": "{:s}-{:d}".format(sid, len(elements) + 1),
                                  "type": "dialogue", "character": "SPEAKER", "extensions": [],

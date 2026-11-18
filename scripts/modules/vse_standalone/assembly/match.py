@@ -120,6 +120,7 @@ MATCH_MIN = 0.6         # words less similar than this count as a mismatch
 SKIP_HEARD = -0.4       # an extra spoken word
 SKIP_SCRIPT = -0.9      # a script word inside a line that wasn't said
 MISMATCH = -1.0
+UTTERANCE_GAP = 1.0     # seconds of silence that end an utterance (a sentence pause is ~0.7)
 
 
 def _pair_score(sim):
@@ -196,6 +197,10 @@ def _line_hits(pairs, heard, script_tokens, index, words):
     for hi, sj, s in pairs:
         _t, line, pos = script_tokens[sj]
         by_line[line].append((hi, pos, s))
+    word_line = {}
+    for line, items in by_line.items():
+        for hi, _pos, _s in items:
+            word_line[heard[hi][1]] = line
     hits = []
     for line, items in by_line.items():
         n_tokens = len(index.line_tokens[line])
@@ -204,6 +209,11 @@ def _line_hits(pairs, heard, script_tokens, index, words):
         accuracy = sum(s for _hi, _pos, s in items) / len(items)
         first_word = heard[items[0][0]][1]
         last_word = heard[items[-1][0]][1]
+        # A reworded ending ("the coffee is terrible") can't align in order: the line runs on
+        # to the end of the utterance, unless those words belong to another line.
+        while (last_word + 1 < len(words) and word_line.get(last_word + 1, line) == line
+               and words[last_word + 1]["start"] - words[last_word]["end"] < UTTERANCE_GAP):
+            last_word += 1
         span = words[first_word:last_word + 1]
         said = [w for w in span]
         confidence = sum(w.get("p", 1.0) for w in said) / max(1, len(said))
@@ -217,6 +227,7 @@ def _line_hits(pairs, heard, script_tokens, index, words):
             "first_word": first_word,
             "last_word": last_word,
             "heard": " ".join(w["text"] for w in said),
+            "matched": len(positions),
             "coverage": round(coverage, 3),
             "accuracy": round(accuracy, 3),
             "confidence": round(confidence, 3),
@@ -225,7 +236,7 @@ def _line_hits(pairs, heard, script_tokens, index, words):
     return hits
 
 
-def match_take(words, index, *, min_coverage=0.4, passes=3):
+def match_take(words, index, *, min_coverage=0.3, min_words=3, passes=3):
     """Recognizer words of one take -> {"scenes": [...], "hits": [...per line...]}."""
     heard = heard_tokens(words)
     scenes = index.rank_scenes([t for t, _ in heard])
@@ -243,7 +254,8 @@ def match_take(words, index, *, min_coverage=0.4, passes=3):
         # Map back to indices into `heard`.
         mapped = [(remaining[hi], sj, s) for hi, sj, s in pairs]
         new = [h for h in _line_hits(mapped, heard, script_tokens, index, words)
-               if h["coverage"] >= min_coverage]
+               if h["coverage"] >= min_coverage
+               and h["matched"] >= min(min_words, len(index.line_tokens[h["line"]]))]
         if not new:
             break
         hits += new
