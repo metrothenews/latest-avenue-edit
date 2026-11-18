@@ -40,7 +40,7 @@ until the editor restarts. (`assembly_job` is the older name of `job_status`; bo
 | 1 | `fetch_drive_folder` → job | `folder_id`, `access_token` (Google OAuth, `drive.readonly`; used once, not stored), `dest` (optional, default `drive/<folder_id>`) | job `result`: `{folder, files: [{name, path, bytes, skipped}]}`. Google Docs are exported as PDF |
 | 1 | `probe_media` | `filepath` (file or folder) | `{folder, files: [{path, name, kind: video/audio/image, duration, fps, width, height, timecode, audio_tracks, error?}]}` |
 | 2 | `read_screenplay` | `filepath` (.pdf/.fountain/.txt), `include_text` | `{title, characters: [{name, lines}], scenes: [{id, heading, int_ext, location, time, elements: [{id, type, character?, text, parentheticals?, extensions?}]}], dialogue_lines}` |
-| 3-4 | `start_assembly` → job | `media_folder`, `output` (`*.edit.json`), `script` (optional), `model`, `image_backend`, `visual_grouping`, `model_order` | job `result`: summary (below). Includes sound sync, transcription, matching, grouping |
+| 3-4 | `start_assembly` → job | `media_folder`, `output` (`*.edit.json`), `script` (optional; screenplay or numbered ad script, .pdf/.txt), `model`, `image_backend`, `visual_grouping`, `model_order`, `music` (music video: song path, or `""` for the longest sound file), `lyrics` (with `music`) | job `result`: summary (below). Includes sound sync, transcription, matching, grouping. With `music`, the song sets the timeline and pictures cut on the beat |
 | 5 | `get_editing_script` | `filepath`, `format`: `summary` / `text` / `lines` / `json` | see below |
 | 5 | `edit_editing_script` | `filepath`, `text` (whole screenplay text) | `{kept, moved, retrimmed, new, removed, found: [line ids], summary}` |
 | 5 | `choose_take` | `filepath`, `line`, `take` (index, 0 = best) | `{line, take, cut}` |
@@ -49,7 +49,8 @@ until the editor restarts. (`assembly_job` is the older name of `job_status`; bo
 | 7 | existing tools | `apply_lut`, `set_strip_properties` (crop), game view | |
 | 7 | `render_editing_script` | `filepath`, `output` (.mp4) | `{filepath, duration, events}` (ffmpeg, no timeline) |
 | 7 | `render_video` | `filepath`, `format` | the fine-tuned timeline, rendered |
-| 7 | `export_sequence` | `filepath` (editing script), `output`, `format`: `otio` / `fcpxml` / `xml` (Premiere, FCP7) / `edl` | `{filepath, format, events}` |
+| 7 | `export_sequence` | `filepath` (editing script), `output`, `format`: `otio` / `fcpxml` / `xml` (Premiere, FCP7) / `edl` (default: from the extension) | `{filepath, format, events, duration}` |
+| 7 | `upload_to_drive` → job | `filepath`, `folder_id`, `access_token` (`drive.file`), `name` | job `result`: `{id, name, bytes}` |
 
 ### `get_editing_script` formats
 
@@ -73,6 +74,14 @@ token was rejected; `503` means the editor isn't up yet (retry in a few seconds)
 
 ## State of each tool
 
-Built and tested on Linux: everything above except `fetch_drive_folder`, `export_sequence` and
-`job_status`, which are being added now (this file is updated as they land). See
-`doc/vse/assembly_workflow.md` for what each step does inside.
+All built and tested on Linux. `fetch_drive_folder` and `upload_to_drive` are tested against a
+stand-in Drive server only: the first real run is with a token from the site's Google sign-in
+(scopes `drive.readonly`, and `drive.file` for uploads). See `doc/vse/assembly_workflow.md` for
+what each step does inside.
+
+### Music elements
+
+In a music edit (`get_editing_script` → `summary` has no dialogue; the document has
+`"mode": "music"`), every line is an `action` with `music: true`: its `cut` is the stretch of
+the song, its `cover` the picture, and `takes` the other pictures that could go there.
+`choose_take` swaps the picture and keeps the song.

@@ -162,8 +162,11 @@ def rough_script(clips, transcripts, groups):
         # Clips with a timecode set the order; photos and sound files without one don't.
         tcs = [by_path[p]["timecode_seconds"] for p in group if by_path[p].get("timecode_seconds") is not None]
         dates = [by_path[p]["creation_time"] for p in group if by_path[p].get("creation_time")]
-        return (0 if tcs else 1, min(tcs) if tcs else 0, min(dates) if dates else "",
-                min(by_path[p]["name"] for p in group))
+        # Then scene/take numbers in the file names, then the date, then the name.
+        slates = [editing_script.name_slate(p) for p in group]
+        scenes = [str(sl["scene"]).zfill(4) for sl in slates if sl]
+        return (0 if tcs else 1, min(tcs) if tcs else 0, min(scenes) if scenes else "~",
+                min(dates) if dates else "", min(by_path[p]["name"] for p in group))
 
     grouped.sort(key=when)
     scenes = []

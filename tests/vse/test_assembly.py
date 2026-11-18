@@ -83,6 +83,11 @@ def test_rules(samples):
           ["dialogue"] * 5 + ["action"] and els[5]["text"].endswith("on [Radio Logo]"), [e["type"] for e in els])
     check("numbered script: brackets reduced to what is said", els[1]["spoken"] == "on Radio", els[1])
 
+    names = {"A001_C001_S1_T1.mov": (1, 1), "SC12A_TK3.mp4": ("12A", 3), "Scene 4 Take 2.mov": (4, 2),
+             "12A-3.mov": ("12A", 3), "sc04-tk02.mxf": (4, 2), "IMG_0101.MOV": None, "c001.mp4": None}
+    got = {n: (lambda r: r and (r["scene"], r["take"]))(editing_script.name_slate(n)) for n in names}
+    check("scene and take from file names", got == names, got)
+
     pdf = os.path.join(samples, "script.pdf")
     s = screenplay.parse(pdf)
     lines = screenplay.dialogue_lines(s)

@@ -28,13 +28,18 @@ Google Drive folder ──► footage, photos, audio            script PDF      
 
 | Step | What | State |
 |---|---|---|
-| 1 | Media from a folder; ffprobe info | **Built, tested** (`assembly/probe.py`). Google Drive download **not built** (see below) |
+| 1 | Media from a folder or Google Drive; ffprobe info | **Built, tested** (`assembly/probe.py`, `assembly/drive.py`: folder with subfolders, Google Docs as PDF, re-fetch skips what's there; upload of renders and sequences). Drive tested against a stand-in server only |
+| 1b | Sync separate sound | **Built, tested** (`assembly/sync.py`): BWF/timecode first (checked by waveform), then waveform cross-correlation verified on the raw sound, then the clap. Synced clips are heard and played through the recorder. Skipped when there's only camera sound |
 | 2 | Screenplay PDF → scenes, action, characters, dialogue | **Built, tested** (`assembly/screenplay.py`): headings with INT/EXT/location/time and scene numbers, cues with (V.O.)/(O.S.), (CONT'D) dropped, parentheticals, transitions, page numbers and (MORE)/(CONTINUED) removed; layout PDFs and flat Fountain/plain text. Tested on a generated PDF and a Fountain sample, **not yet on a real production script** |
 | 3 | Script supervisor notes | **Reserved, not built.** Contingencies and slots: [script_supervisor_notes.md](script_supervisor_notes.md) |
 | 4 | Assembly: transcription, matching, ranking, grouping | **Built, tested** on the generated shoot (`assembly/transcribe.py`, `match.py`, `visual.py`, `pipeline.py`): every take found for every line at the right time, flubbed and cut-short takes ranked below clean ones, scene 1 and 2 clips told apart, B-roll and a still grouped with their scene, spoken slates read. **Not yet run on real footage** |
 | 5 | Editing script (JSON), text round trip | **Built, tested** (`assembly/editing_script.py`): moved lines keep their footage, shortened lines are re-trimmed to the words left, deleted lines drop, a typed-in line is found in what was said on set, round trip of unchanged text changes nothing |
 | 6 | Lay out in the sequencer | **Built, tested headless** in the Linux build (`assembly_tools.lay_out_editing_script`): frame rate from footage, strips cut to in/out with no gaps, sound on the channel above, a marker per scene, re-laying replaces the old strips. **Not yet looked at by a person** |
-| 7 | Crop/colour, fine-tune, export | Crop and colour: the existing game view and tools, unchanged. Direct ffmpeg render of an editing script: **built, tested** (`assembly/render.py`). Export of a sequence to Drive: **not built** |
+| 7 | Crop/colour, fine-tune, export | Crop and colour: the existing game view and tools, unchanged. Direct ffmpeg render of an editing script: **built, tested** (`assembly/render.py`). Upload to Drive: `upload_to_drive` |
+| — | Numbered ad / social scripts | **Built, tested** on Sam's Assignment 16 ad scripts (locally) with synthetic takes: one scene per "Ad Script N", one line per number, `[brackets]` are visuals |
+| — | Music videos | **Built, tested** (`assembly/music.py`): beats and bars (numpy), lyric lines timed by the same aligner, pictures cut on the beat, alternating looks. Checked on Sam's IMPULSIVE excerpt and culture clips (locally) |
+| 7 | Sequence export | **Built, tested** (`assembly/export.py`): OpenTimelineIO with the FCPXML (Final Cut, Resolve), FCP7 XML (Premiere, Resolve) and CMX 3600 EDL adapters; every format read back. **Not yet opened in Resolve, Premiere or Final Cut** |
+| — | Takes without slates | Fallbacks in order: timecode, file names (`S1_T2`, `SC12A_TK3`, `12A-3`), spoken slate, then picture and sound alone |
 | — | No script | **Built, tested**: rough script from speech (pause-split lines, slates dropped) by look-alike group in timecode order, alternates from the other takes; the language model asked once for the scene order (tested against a stand-in server, not a real model) |
 
 ## Running it
@@ -133,17 +138,22 @@ onnxruntime would remove it (next steps).
 the OpenAI-compatible server already used by the editing assistant (`LLM_BASE_URL`, or
 `VSE_ASSEMBLY_LLM_URL`). Without one, timecode order.
 
+## GPU
+
+faster-whisper runs on CUDA (float16) when ctranslate2 sees an NVIDIA card, and drops to the
+CPU for the rest of a run if CUDA fails (missing cuBLAS/cuDNN is the usual cause on Windows).
+MobileCLIP runs on the GPU when torch has CUDA; the image uses the CPU build of torch (the
+model is 11 M parameters). `VSE_ASSEMBLY_DEVICE=cpu` forces the CPU. In the container, the PC
+install builds in the CUDA libraries and passes `--gpus all` when `nvidia-smi` works.
+
 ## Next steps, in order
 
 1. **Real footage and a real script.** Run the full pipeline on a real shoot; tune
    `MATCH_MIN`, the skip costs, `UTTERANCE_GAP` and the look thresholds on it; add the cases
    that break to `tests/vse/test_assembly.py`.
-2. **Google Drive in and out.** A `fetch_drive_folder(folder_id)` tool that downloads a folder
-   into the media folder (Drive API v3 `files.list` / `files.get?alt=media`, using an access
-   token with `drive.readonly` handed over by the site's Google sign-in, never stored), skipping
-   files already there by size and checksum; and an upload of renders and the editing script.
-3. **Container**: add poppler-utils and the assembly environment to `cloud/Dockerfile` and set
-   `VSE_ASSEMBLY_PYTHON`, so the cloud editor can run the assembly; keep models in `/data/models`.
+2. **Google Drive with a real token** from the site's sign-in (the code is tested against a
+   stand-in server).
+3. **Open the exported sequences** in Resolve, Premiere and Final Cut and fix what they object to.
 4. **The site's /edit page** (latest-avenue repo): editing-script view calling
    `get_editing_script` / `edit_editing_script` / `choose_take`, thumbnails from
    `media[].shots[].thumbnail`, and "Submit" calling `lay_out_editing_script`.

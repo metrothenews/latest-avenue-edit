@@ -93,6 +93,25 @@ def heard_slate(words):
             "time": words[0]["start"], "heard": m.group(0)}
 
 
+NAME_SLATE = [
+    # "S1_T2", "SC12A_TK3", "Scene 4 Take 2", "sc04-tk02"
+    re.compile(r"(?:^|[^A-Za-z])(?:S|SC|SCN|SCENE)[ _.-]*(\d{1,3}[A-Z]?)(?:[ _.-]*[A-Z])?[ _.-]+(?:T|TK|TAKE)[ _.-]*(\d{1,3})(?![0-9])", re.I),
+    # "12A-3", "12A_T3" (scene + set-up letter, take)
+    re.compile(r"^(\d{1,3}[A-Z])[ _.-]+T?(\d{1,3})(?![0-9])", re.I),
+]
+
+
+def name_slate(name):
+    """Scene and take from a file name, when it carries them. -> {"scene", "take"} or None."""
+    stem = os.path.splitext(os.path.basename(name))[0]
+    for pattern in NAME_SLATE:
+        m = pattern.search(stem)
+        if m:
+            scene = m.group(1).upper()
+            return {"scene": int(scene) if scene.isdigit() else scene, "take": int(m.group(2))}
+    return None
+
+
 def _clip_id(path, used):
     base = re.sub(r"[^A-Za-z0-9_.-]", "_", os.path.splitext(os.path.basename(path))[0])
     cid, n = base, 1
@@ -130,7 +149,7 @@ def build(script, clips, transcripts, matches, groups=None, visuals=None, fps=No
                                           "width", "height", "timecode", "timecode_seconds",
                                           "audio_tracks", "creation_time")}
         entry.update(group=None, shots=(visuals or {}).get(clip["path"], {}).get("shots", []),
-                     slate=heard_slate(words), words=[
+                     slate=heard_slate(words), name_slate=name_slate(clip["path"]), words=[
                          {"text": w["text"], "start": w["start"], "end": w["end"], "p": w.get("p")}
                          for w in words],
                      supervisor=_supervisor_placeholder())
