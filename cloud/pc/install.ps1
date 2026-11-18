@@ -201,13 +201,21 @@ Write-Host "Using $target ($sizeMb MB)"
 Step "Building the image (first time: a few minutes)"
 
 $env:DOCKER_BUILDKIT = "1"
-Run "Building the image" { docker build -f (Join-Path $Repo "cloud\Dockerfile") -t $Image $Repo }
+# An NVIDIA card: build in the CUDA libraries for transcription and give the container the GPU.
+$Gpu = $false
+if (Have "nvidia-smi") {
+    nvidia-smi -L 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) { $Gpu = $true }
+}
+$cuda = if ($Gpu) { "1" } else { "0" }
+Write-Host ("NVIDIA graphics card: " + $(if ($Gpu) { "yes, transcription will use it" } else { "no, everything runs on the processor" }))
+Run "Building the image" { docker build --build-arg "ASSEMBLY_CUDA=$cuda" -f (Join-Path $Repo "cloud\Dockerfile") -t $Image $Repo }
 
 # ---------------------------------------------------------------------------
 Step "Starting the server"
 
 New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
-foreach ($sub in @("projects", "media", "renders", "models\adapters", "dataset")) {
+foreach ($sub in @("projects", "media", "renders", "models\adapters", "models\hf", "dataset")) {
     New-Item -ItemType Directory -Force -Path (Join-Path $DataDir $sub) | Out-Null
 }
 if ($Cpus -le 0) { $Cpus = [math]::Max(2, [Environment]::ProcessorCount - 2) }
@@ -228,6 +236,7 @@ $runArgs = @(
     "--cpus", "$Cpus"
 )
 if ($Memory) { $runArgs += @("--memory", $Memory) }
+if ($Gpu) { $runArgs += @("--gpus", "all") }
 if ($ModelUrl) { $runArgs += @("-e", "LLM_MODEL_URL=$ModelUrl") }
 $runArgs += $Image
 Run "Starting the server" { docker @runArgs | Out-Null }

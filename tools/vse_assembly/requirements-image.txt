@@ -1,0 +1,4 @@
+# Optional: MobileCLIP2-S0 picture grouping. Install torch first from the CPU index
+# (https://download.pytorch.org/whl/cpu): the default PyPI wheel carries CUDA (about 5 GB).
+# Without these, a model-free colour signature groups the pictures.
+open_clip_torch>=3.2

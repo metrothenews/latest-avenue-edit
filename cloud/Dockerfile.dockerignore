@@ -6,6 +6,8 @@
 !cloud/gateway.py
 !cloud/agent.py
 !tools/vse_mcp/vse_mcp.py
+!tools/vse_assembly/requirements.txt
+!tools/vse_assembly/requirements-image.txt
 !scripts/modules/vse_standalone
 !scripts/startup/vse_standalone_startup.py
 !scripts/startup/bl_app_templates_system/Video_Editing

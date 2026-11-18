@@ -46,6 +46,29 @@ COPY scripts/startup/bl_app_templates_system/Video_Editing /tmp/overlay/startup/
 RUN VERSION_DIR="$(ls -d /opt/latest-avenue-video/[0-9]*.[0-9]* | head -1)" \
     && cp -R /tmp/overlay/. "$VERSION_DIR/scripts/" && rm -rf /tmp/overlay
 
+# The assembly cut's own Python (transcription, matching, picture grouping, sequence export;
+# doc/vse/assembly_workflow.md), next to the editor's. ASSEMBLY_CUDA=1 adds the CUDA libraries
+# faster-whisper needs on an NVIDIA card (the PC install sets it when it finds one); without
+# a card everything runs on the CPU. torch is the CPU build: the picture model is small.
+ARG ASSEMBLY_CUDA=0
+COPY tools/vse_assembly/requirements.txt tools/vse_assembly/requirements-image.txt /tmp/assembly/
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      ffmpeg poppler-utils python3-venv \
+    && rm -rf /var/lib/apt/lists/* \
+    && python3 -m venv /opt/assembly-env \
+    && /opt/assembly-env/bin/pip install --no-cache-dir -r /tmp/assembly/requirements.txt \
+    && if [ "$ASSEMBLY_CUDA" = "1" ]; then \
+         /opt/assembly-env/bin/pip install --no-cache-dir nvidia-cublas-cu12 "nvidia-cudnn-cu12==9.*"; fi \
+    && ( /opt/assembly-env/bin/pip install --no-cache-dir \
+           --index-url https://download.pytorch.org/whl/cpu torch torchvision \
+         && /opt/assembly-env/bin/pip install --no-cache-dir -r /tmp/assembly/requirements-image.txt \
+         || echo "picture model not installed: the colour signature groups pictures" ) \
+    && rm -rf /tmp/assembly
+ENV VSE_ASSEMBLY_PYTHON=/opt/assembly-env/bin/python \
+    LD_LIBRARY_PATH=/opt/assembly-env/lib/python3.12/site-packages/nvidia/cublas/lib:/opt/assembly-env/lib/python3.12/site-packages/nvidia/cudnn/lib \
+    HF_HOME=/data/models/hf \
+    VSE_ASSEMBLY_LLM_URL=http://127.0.0.1:8793
+
 COPY cloud/start.sh cloud/editor.sh cloud/gateway.py cloud/agent.py tools/vse_mcp/vse_mcp.py /opt/cloud/
 COPY --from=llama /build/bin/llama-server /usr/local/bin/llama-server
 
