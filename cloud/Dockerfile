@@ -44,7 +44,8 @@ COPY scripts/modules/vse_standalone /tmp/overlay/modules/vse_standalone
 COPY scripts/startup/vse_standalone_startup.py /tmp/overlay/startup/vse_standalone_startup.py
 COPY scripts/startup/bl_app_templates_system/Video_Editing /tmp/overlay/startup/bl_app_templates_system/Video_Editing
 RUN VERSION_DIR="$(ls -d /opt/latest-avenue-video/[0-9]*.[0-9]* | head -1)" \
-    && cp -R /tmp/overlay/. "$VERSION_DIR/scripts/" && rm -rf /tmp/overlay
+    && cp -R /tmp/overlay/. "$VERSION_DIR/scripts/" && rm -rf /tmp/overlay \
+    && ln -s "$VERSION_DIR/scripts/modules" /opt/vse-modules
 
 # The assembly cut's own Python (transcription, matching, picture grouping, sequence export;
 # doc/vse/assembly_workflow.md), next to the editor's. ASSEMBLY_CUDA=1 adds the CUDA libraries
@@ -70,13 +71,20 @@ ENV VSE_ASSEMBLY_PYTHON=/opt/assembly-env/bin/python \
     HF_HUB_DISABLE_XET=1 \
     VSE_ASSEMBLY_LLM_URL=http://127.0.0.1:8793
 
-COPY cloud/start.sh cloud/editor.sh cloud/gateway.py cloud/agent.py tools/vse_mcp/vse_mcp.py /opt/cloud/
+COPY cloud/start.sh cloud/editor.sh cloud/gateway.py cloud/agent.py cloud/worker.py cloud/heartbeat.py \
+     tools/vse_mcp/vse_mcp.py /opt/cloud/
 COPY --from=llama /build/bin/llama-server /usr/local/bin/llama-server
+
+# The job worker (cloud/pc/compose.yaml) runs from this same image:
+#   /opt/assembly-env/bin/python /opt/cloud/worker.py   (PYTHONPATH=/opt/vse-modules)
+# VSE_VERSION (e.g. the git commit) is what the public /status and the heartbeat report.
+ARG VSE_VERSION=dev
 
 # Not root: the editor and gateway run as an ordinary user. The sed strips Windows line
 # endings in case the repository was checked out with them.
 RUN useradd --create-home --uid 1001 editor && mkdir -p /data && chown editor:editor /data \
     && sed -i 's/\r$//' /opt/cloud/*.sh /opt/cloud/*.py \
+    && echo "$VSE_VERSION" > /opt/cloud/VERSION \
     && chmod +x /opt/cloud/start.sh /opt/cloud/editor.sh
 USER editor
 

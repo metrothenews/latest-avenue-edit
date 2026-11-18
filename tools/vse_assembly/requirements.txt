@@ -14,3 +14,4 @@ opentimelineio>=0.17
 otio-fcpx-xml-adapter
 otio-fcp-adapter
 otio-cmx3600-adapter
+redis>=5

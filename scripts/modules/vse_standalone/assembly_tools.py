@@ -173,12 +173,47 @@ def _assembly_result(entry):
     return editing_script.summary(editing_script.load(entry["output"]))
 
 
-def _start_job(kind, args, log, output, on_done=None, env_extra=None, stdout=None):
-    """Run a command of the assembly's own Python in the background. -> job descriptor.
+def _worker():
+    """The job worker (compose: VSE_WORKER_URL + WORKER_KEY), or None to run steps here."""
+    url, key = os.environ.get("VSE_WORKER_URL"), os.environ.get("WORKER_KEY")
+    return (url.rstrip("/"), key) if url and key else None
+
+
+def _wcall(method, path, body=None, timeout=60):
+    import urllib.error
+    import urllib.request
+    url, key = _worker()
+    req = urllib.request.Request(url + path, method=method,
+                                 data=json.dumps(body).encode() if body is not None else None,
+                                 headers={"X-Worker-Key": key, "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.load(resp)
+    except urllib.error.HTTPError as ex:
+        try:
+            msg = json.load(ex).get("error") or str(ex)
+        except ValueError:
+            msg = str(ex)
+        raise api.APIError(msg) from None
+    except (urllib.error.URLError, OSError):
+        raise api.APIError("The job worker is not reachable; try again in a moment") from None
+
+
+def _start_job(kind, args, log, output, on_done=None, env_extra=None, stdout=None, outputs=None):
+    """Run a command of the assembly's own Python in the background: on the job worker when
+    there is one (compose), else here. -> job descriptor.
 
     env_extra: secrets (an access token) go to the child's environment, never its arguments.
-    stdout: file for the command's JSON result.
+    stdout: file for the command's JSON result. outputs: files to copy to storage when done.
     """
+    if _worker():
+        module, argv = args[2], args[3:]
+        job = _wcall("POST", "/jobs", {"module": module, "argv": argv, "log": log, "stdout": stdout,
+                                       "outputs": outputs if outputs is not None else ([output] if output else []),
+                                       "secrets": env_extra or None, "kind": kind})
+        _jobs[job["id"]] = {"kind": kind, "remote": job["id"], "log": log, "output": output,
+                            "started": time.time(), "on_done": on_done, "result": None}
+        return {"job": job["id"], "kind": kind, "output": output, "log": log}
     job = uuid.uuid4().hex[:8]
     env = dict(os.environ, PYTHONPATH=MODULES_DIR + os.pathsep + os.environ.get("PYTHONPATH", ""),
                PYTHONUNBUFFERED="1", **(env_extra or {}))
@@ -198,12 +233,43 @@ def job_status(job: str) -> dict:
     the last log lines, and its result when done."""
     entry = _jobs.get(job)
     if entry is None:
-        from .assembly import imports
-        try:
-            return _import_job_status(imports.get(job))
-        except KeyError:
-            pass
-        raise api.APIError("No job {!r} (jobs are forgotten when the editor restarts)".format(job))
+        if _worker():
+            try:
+                st = _wcall("POST", "/imports/status", {"job_id": job})
+                return _import_job_status(st)
+            except api.APIError:
+                pass
+            try:
+                remote = _wcall("GET", "/jobs/" + job)
+                entry = _jobs[job] = {"kind": remote.get("kind"), "remote": job, "log": remote.get("log"),
+                                      "output": None, "started": remote.get("created") or time.time(),
+                                      "on_done": None, "result": None}
+            except api.APIError:
+                entry = None
+        else:
+            from .assembly import imports
+            try:
+                return _import_job_status(imports.get(job).status(), imports.get(job))
+            except KeyError:
+                pass
+        if entry is None:
+            raise api.APIError("No job {!r} (jobs are forgotten when the editor restarts)".format(job))
+    if entry.get("remote"):
+        remote = _wcall("GET", "/jobs/" + entry["remote"])
+        state = {"queued": "running", "running": "running", "done": "done"}.get(remote["state"], "failed")
+        log = remote.get("log_tail") or []
+        if remote["state"] == "queued":
+            log = log + ["waiting for the worker ({:s})".format(entry["kind"])]
+        if remote["state"] == "needs_token":
+            log = log + ["the worker restarted before this ran: sign in to Drive again and repeat"]
+        if state == "done" and entry["result"] is None and entry["on_done"]:
+            try:
+                entry["result"] = entry["on_done"](entry)
+            except Exception as ex:
+                state, log = "failed", log + ["could not read the result: {:s}".format(str(ex))]
+        return {"job": job, "kind": entry["kind"], "state": state,
+                "seconds": round(time.time() - entry["started"], 1), "output": entry["output"],
+                "log": log, "result": entry["result"] if state == "done" else None}
     code = entry["proc"].poll()
     try:
         with open(entry["log"], encoding="utf-8") as fh:
@@ -376,6 +442,26 @@ def lay_out_editing_script(filepath: str, channel: int = 1, frame_start: int = 1
             "placed": placed}
 
 
+def _run_on_worker(kind, argv, out, timeout=1800):
+    """A step the caller waits for (render, export), run as a worker job. -> its JSON result."""
+    meta = os.path.join(os.path.dirname(out), ".jobs")
+    os.makedirs(meta, exist_ok=True)
+    stem = os.path.join(meta, os.path.basename(out))
+    job = _wcall("POST", "/jobs", {"module": "vse_standalone.assembly", "argv": argv, "log": stem + ".log",
+                                   "stdout": stem + ".json", "outputs": [out], "kind": kind})
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        st = _wcall("GET", "/jobs/" + job["id"])
+        if st["state"] == "done":
+            with open(stem + ".json", encoding="utf-8") as fh:
+                return json.load(fh)
+        if st["state"] not in ("queued", "running"):
+            last = (st.get("log_tail") or ["{:s} failed".format(kind)])[-1]
+            raise api.APIError("{:s} failed: {:s}".format(kind.capitalize(), last))
+        time.sleep(0.5)
+    raise api.APIError("{:s} is still waiting for the worker; try again later".format(kind.capitalize()))
+
+
 @tool(mutates=False)
 def render_editing_script(filepath: str, output: str, width: typing.Optional[int] = None,
                           height: typing.Optional[int] = None) -> dict:
@@ -384,6 +470,10 @@ def render_editing_script(filepath: str, output: str, width: typing.Optional[int
     path, doc = _load(filepath)
     out = _out_path(output)
     os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
+    if _worker():
+        argv = ["render", path, "-o", out] + (["--width", str(width)] if width else []) + \
+            (["--height", str(height)] if height else [])
+        return _run_on_worker("render", argv, out)
     try:
         return render.render(doc, out, width=width, height=height)
     except (RuntimeError, ValueError) as ex:
@@ -401,6 +491,8 @@ def export_sequence(filepath: str, output: str,
     """
     path, _doc = _load(filepath)
     out = _out_path(output)
+    if _worker():
+        return _run_on_worker("export", ["export", path, "-o", out] + (["--format", format] if format else []), out)
     args = [_python(), "-m", "vse_standalone.assembly", "export", path, "-o", out]
     if format:
         args += ["--format", format]
@@ -433,28 +525,39 @@ def fetch_drive_folder(folder_id: str, access_token: str, dest: typing.Optional[
     from .assembly import imports
     folder_id = folder_id.strip().rstrip("/").rsplit("/", 1)[-1].split("?")[0]
     out = _out_path(dest or os.path.join("drive", folder_id))
+    items = [{"drive_id": folder_id, "kind": "folder", "name": folder_id, "recursive": True, "flat": True}]
+    if _worker():
+        jid = _wcall("POST", "/imports/start", {"access_token": access_token, "items": items, "dest": out})["job_id"]
+        _import_dest[jid] = out
+        return {"job": jid, "job_id": jid, "kind": "fetch_drive_folder", "output": out}
     try:
-        job = imports.start(access_token, [{"drive_id": folder_id, "kind": "folder", "name": folder_id,
-                                            "recursive": True, "flat": True}], dest=out)
+        job = imports.start(access_token, items, dest=out)
     except ValueError as ex:
         raise api.APIError(str(ex)) from None
     return {"job": job.id, "job_id": job.id, "kind": "fetch_drive_folder", "output": out}
 
 
-def _import_job_status(job):
+_import_dest = {}                   # fetch_drive_folder's folder, for imports run on the worker
+
+
+def _import_job_status(st, job=None):
     """An import job seen through job_status (for fetch_drive_folder callers)."""
-    st = job.status()
+    from .assembly import imports
     state = {"done": "done", "failed": "failed", "cancelled": "failed"}.get(st["state"], "running")
-    files = [{"name": os.path.basename(it.get("path") or "") or it["name"], "path": it.get("path"),
-              "bytes": it.get("size"), "skipped": it["state"] == "skipped", "drive_id": it["drive_id"]}
-             for it in job.items if it["kind"] == "file" and it["state"] in ("done", "skipped")]
+    known = {m["drive_id"]: m for m in imports.imported()}
+    files = [{"name": os.path.basename((known.get(it["drive_id"]) or {}).get("path") or "") or it["name"],
+              "path": (known.get(it["drive_id"]) or {}).get("path"), "bytes": it.get("size"),
+              "skipped": it["state"] == "skipped", "drive_id": it["drive_id"]}
+             for it in st["items"] if it["kind"] == "file" and it["state"] in ("done", "skipped")]
     log = ["{:s}: {:s}".format(it["name"], it["state"] + (" ({:s})".format(it["error"]) if it.get("error") else ""))
-           for it in job.items if it["kind"] == "file"][-40:]
+           for it in st["items"] if it["kind"] == "file"][-40:]
     if st["state"] == "needs_token":
         log.append("sign in to Drive again")
-    return {"job": job.id, "kind": "import", "state": state, "seconds": round(time.time() - job.created, 1),
-            "output": job.dest, "log": log,
-            "result": {"folder": job.dest, "files": files,
+    folder = job.dest if job else _import_dest.get(st["job_id"])
+    return {"job": st["job_id"], "kind": "import", "state": state,
+            "seconds": round(time.time() - (job.created if job else time.time()), 1),
+            "output": folder, "log": log,
+            "result": {"folder": folder, "files": files,
                        "fetched": sum(1 for f in files if not f["skipped"])} if state == "done" else None,
             "import": st}
 
@@ -492,6 +595,9 @@ def import_start(access_token: str, items: typing.List[dict], proxies: bool = Tr
     :arg items: [{drive_id, kind: "file"|"folder", name, recursive}].
     :arg proxies: Also make a 140p copy of each video for light thumbnails.
     """
+    if _worker():
+        return _wcall("POST", "/imports/start", {"access_token": access_token, "items": _items_arg(items),
+                                                 "proxies": proxies})
     from .assembly import imports
     try:
         job = imports.start(access_token, _items_arg(items), proxies=proxies)
@@ -504,12 +610,16 @@ def import_start(access_token: str, items: typing.List[dict], proxies: bool = Tr
 def import_status(job_id: str) -> dict:
     """State of an import: running / paused / needs_token / cancelled / done / failed, totals,
     and every item with its progress."""
+    if _worker():
+        return _wcall("POST", "/imports/status", {"job_id": job_id})
     return _import(job_id).status()
 
 
 @tool(mutates=False)
 def import_pause(job_id: str) -> dict:
     """Pause an import. The file in flight stops; its partial download is kept."""
+    if _worker():
+        return _wcall("POST", "/imports/pause", {"job_id": job_id})
     return _import(job_id).pause()
 
 
@@ -517,6 +627,8 @@ def import_pause(job_id: str) -> dict:
 def import_resume(job_id: str, access_token: str) -> dict:
     """Resume a paused import (or one waiting for a fresh sign-in); the partial file continues
     where it stopped."""
+    if _worker():
+        return _wcall("POST", "/imports/resume", {"job_id": job_id, "access_token": access_token})
     return _import(job_id).start(access_token)
 
 
@@ -527,6 +639,9 @@ def import_edit(job_id: str, add: typing.Optional[typing.List[dict]] = None,
     """Add items to an import or remove them, while it runs or is paused. Removing the file in
     flight aborts it; removing a folder removes its unfinished children; finished files stay
     (remove_media deletes them)."""
+    if _worker():
+        return _wcall("POST", "/imports/edit", {"job_id": job_id, "add": _items_arg(add), "remove": remove or [],
+                                                "access_token": access_token})
     return _import(job_id).edit(_items_arg(add), remove or [], access_token)
 
 
@@ -534,6 +649,8 @@ def import_edit(job_id: str, add: typing.Optional[typing.List[dict]] = None,
 def import_cancel(job_id: str) -> dict:
     """Stop an import: unfinished items are dropped and their partial downloads deleted;
     finished files stay in the project."""
+    if _worker():
+        return _wcall("POST", "/imports/cancel", {"job_id": job_id})
     return _import(job_id).cancel()
 
 
@@ -541,6 +658,8 @@ def import_cancel(job_id: str) -> dict:
 def remove_media(drive_ids: typing.List[str]) -> dict:
     """Remove imported files (by Drive id) from the project and delete them from the disk,
     with their proxies."""
+    if _worker():
+        return _wcall("POST", "/imports/remove_media", {"drive_ids": drive_ids})
     from .assembly import imports
     return imports.remove_media(drive_ids)
 

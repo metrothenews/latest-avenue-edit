@@ -5,6 +5,8 @@
 !cloud/editor.sh
 !cloud/gateway.py
 !cloud/agent.py
+!cloud/worker.py
+!cloud/heartbeat.py
 !tools/vse_mcp/vse_mcp.py
 !tools/vse_assembly/requirements.txt
 !tools/vse_assembly/requirements-image.txt

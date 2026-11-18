@@ -32,6 +32,24 @@ Poll every 1-2 s. `log` lines are short plain-English progress ("heard A001_C002
 ...") the page can show as they come. `result` is set when `state` is `"done"`. Jobs live
 until the editor restarts. (`assembly_job` is the older name of `job_status`; both work.)
 
+On the PC stack (cloud/pc/SERVER.md) the same calls run as queued jobs in a separate worker,
+with nothing changed for the page: a job waiting its turn is `"running"` with a last log line
+"waiting for the worker (...)"; jobs and their states survive a restart of the editor or the
+PC. `render_editing_script` and `export_sequence` still answer when finished (they wait for
+their worker job). After a restart, a job that needed a Drive token fails with "sign in to
+Drive again and repeat" (tokens are never stored); imports come back paused (`needs_token`).
+
+## Server status (no sign-in)
+
+```
+GET /status   ->  {"online": true, "version": "...", "queue_depth": 0, "sessions_free": 1}
+```
+
+Any origin, no token, nothing private: for the page to say "busy" or show the version before
+sign-in. When it does not answer at all, read Firestore `editServer/status`
+(`{lastSeen, version, online, queueDepth, sessionsFree}`, written every minute by the PC):
+`lastSeen` older than about 3 minutes means the edit server is offline.
+
 ## The flow, in order
 
 | Step | Tool | Params | Result |
@@ -166,6 +184,8 @@ gateway is told to trust). It runs as the last step of the container test
 assembly, poll the job, read the editing script as text and lines, edit the text, swap a take,
 take pictures, nudge a sync, lay it out, render, export all four formats, then a music video
 from an uploaded song and lyric sheet. Use it as the reference for how the page should call.
+`cloud/test_stack.sh` runs the same flow against the compose stack (gateway + worker + queue +
+storage), plus the import queue, a worker killed mid-job, the backup and the heartbeat.
 
 ## Errors
 

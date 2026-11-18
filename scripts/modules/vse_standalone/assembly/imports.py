@@ -45,6 +45,7 @@ FINAL = ("done", "failed", "skipped", "removed")
 
 _jobs = {}
 _lock = threading.RLock()
+on_file_done = None           # optional callback(path) after each import (the worker stores it)
 
 
 class NeedsToken(Exception):
@@ -548,6 +549,10 @@ class Job:
                                     "proxy": info.get("proxy"), "imported_at": time.time(), "job": self.id}
             _save_manifest(data)
             self._save()
+        if on_file_done:
+            for p in (final, info.get("proxy")):
+                if p:
+                    on_file_done(p)
 
     def _finish(self, path):
         """Probe the file (ready for the assembly) and make a small proxy for videos."""

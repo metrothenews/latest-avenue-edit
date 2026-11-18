@@ -17,6 +17,9 @@ other people is not what protects the compute; this check is.
 Endpoints:
 
 ``GET  /healthz``      liveness for the platform. No information, no auth.
+``GET  /status``       public, no auth, any origin: ``{online, version, queue_depth,
+                       sessions_free}`` so the website can say "the edit server is offline"
+                       or "busy" before anyone signs in. Nothing private in it.
 ``GET  /api/status``   ``Authorization: Bearer <token>``. Editor state.
 ``POST /api/rpc``      ``Authorization: Bearer <token>``. JSON-RPC to the editor's tools.
 ``GET  /api/chat/state``   chat and language model state.
@@ -42,6 +45,8 @@ Environment:
                              to zero by itself and does not need it.
 ``EDITOR_AUTOSTART``         ``1`` starts the editor with the gateway instead of on the
                              first signed-in request.
+``VSE_VERSION``              the version shown by ``/status``.
+``VSE_WORKER_URL``, ``WORKER_KEY``  the job worker (compose); ``/status`` reads its queue.
 ``GATEWAY_CERTS_FILE``       tests only: JSON file of signing certificates to trust instead
                              of fetching Google's.
 """
@@ -236,6 +241,37 @@ async def _autosave(app, why):
 
 async def healthz(_request):
     return web.Response(text="ok")
+
+
+def _version():
+    """VSE_VERSION if set, else the version baked into the image (/opt/cloud/VERSION)."""
+    if os.environ.get("VSE_VERSION"):
+        return os.environ["VSE_VERSION"]
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION"), encoding="utf-8") as fh:
+            return fh.read().strip() or "dev"
+    except OSError:
+        return "dev"
+
+
+async def public_status(request):
+    queue = None
+    url, key = os.environ.get("VSE_WORKER_URL"), os.environ.get("WORKER_KEY")
+    if url and key:
+        try:
+            async with request.app["http"].get(url.rstrip("/") + "/status", headers={"X-Worker-Key": key},
+                                               timeout=aiohttp.ClientTimeout(total=3)) as resp:
+                queue = (await resp.json())["queue_depth"] if resp.status == 200 else None
+        except Exception:
+            queue = None
+    busy = 1 if request.app["streams"] else 0
+    resp = web.json_response({"online": True, "version": _version(),
+                              "queue_depth": queue if queue is not None else 0,
+                              "worker": queue is not None if url else None,
+                              "sessions_free": max(0, 1 - busy)},
+                             headers={"Cache-Control": "no-store"})
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    return resp
 
 
 async def options(request):
@@ -471,6 +507,7 @@ def make_app():
     app.on_startup.append(_on_startup)
     app.on_cleanup.append(_on_cleanup)
     app.router.add_get("/healthz", healthz)
+    app.router.add_get("/status", public_status)
     app.router.add_get("/api/status", status)
     app.router.add_post("/api/rpc", rpc)
     app.router.add_get("/stream", stream)

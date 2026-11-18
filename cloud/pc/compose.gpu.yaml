@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: 2026 VSE Standalone contributors
+#
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+# Adds the NVIDIA card to the worker, where transcription runs. Use with compose.yaml:
+#   docker compose -f compose.yaml -f compose.gpu.yaml --profile tunnel up -d
+# Needs the image built with --build-arg ASSEMBLY_CUDA=1 (install.ps1 does that when it finds
+# a card). Without a card, leave this file out: everything runs on the processor.
+services:
+  worker:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

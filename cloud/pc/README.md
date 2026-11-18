@@ -11,6 +11,11 @@ browser: latestavenue.com/edit  ──https──▶  tunnel address  ──▶ 
                                                            /data  =  a folder on the PC
 ```
 
+**Next step: the stack.** [SERVER.md](SERVER.md) moves this onto a Docker Compose stack with
+a fixed Cloudflare Tunnel address (`edit-api.latestavenue.com`), a job worker and queue that
+survive reboots, per-user storage, nightly backups and an offline notice for the site. Do
+the steps below first (the stack uses the same image), then SERVER.md.
+
 ## Test the new assembly pipeline in Docker (leaves the running editor alone)
 
 Everything is built and tested in a Linux container: a generated 124x70 pixel fake shoot of 1-second clips (a

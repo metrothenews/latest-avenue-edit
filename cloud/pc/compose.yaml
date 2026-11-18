@@ -1,0 +1,157 @@
+# SPDX-FileCopyrightText: 2026 VSE Standalone contributors
+#
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+# The edit server on the PC, as one stack (cloud/pc/SERVER.md):
+#
+#   gateway     the signed-in website's only way in (/api/rpc, /stream, public /status);
+#               the editor session runs inside it.
+#   worker      every heavy step (Drive import, probe and proxies, transcription, assembly,
+#               render, export, Drive upload) as queued jobs; nightly project backup.
+#   redis       the job queue, kept on disk (append-only file), so jobs survive a reboot.
+#   s3          SeaweedFS, S3-compatible storage: per-user files under users/<uid>/.
+#   heartbeat   writes editServer/status in Firestore every minute.
+#   cloudflared the Cloudflare Tunnel: edit-api.latestavenue.com -> gateway, with no open
+#               port on the router. Only with --profile tunnel.
+#
+# Start (from this folder, with .env filled in from env.example):
+#   docker compose --profile tunnel up -d
+# With the NVIDIA card (transcription runs in the worker):
+#   docker compose -f compose.yaml -f compose.gpu.yaml --profile tunnel up -d
+# On Windows, server.ps1 does this, and starts it at sign-in.
+#
+# Everything restarts by itself (restart: unless-stopped) and has a health check. Nothing
+# listens outside the PC except through the tunnel: the gateway's port is bound to 127.0.0.1.
+
+name: latest-avenue
+
+x-edit-image: &edit-image ${EDIT_IMAGE:-latest-avenue-edit:local}
+
+services:
+  gateway:
+    image: *edit-image
+    restart: unless-stopped
+    environment:
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:?set FIREBASE_PROJECT_ID in .env}
+      ALLOWED_UIDS: ${ALLOWED_UIDS:?set ALLOWED_UIDS in .env}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://latestavenue.com,https://www.latestavenue.com}
+      EDITOR_AUTOSTART: ${EDITOR_AUTOSTART:-1}
+      VSE_WORKER_URL: http://worker:8795
+      WORKER_KEY: ${WORKER_KEY:?set WORKER_KEY in .env}
+      VSE_VERSION: ${VSE_VERSION:-}
+      VSE_GEOMETRY: ${VSE_GEOMETRY:-1600x900}
+      LLM_THREADS: ${LLM_THREADS:-4}
+    volumes:
+      - ${DATA_DIR:-edit-data}:/data
+    ports:
+      - "127.0.0.1:${GATEWAY_PORT:-8080}:8080"
+    depends_on:
+      worker:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/healthz',timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  worker:
+    image: *edit-image
+    restart: unless-stopped
+    command: ["/opt/assembly-env/bin/python", "/opt/cloud/worker.py"]
+    environment:
+      PYTHONPATH: /opt/vse-modules
+      REDIS_URL: redis://redis:6379/0
+      WORKER_KEY: ${WORKER_KEY:?set WORKER_KEY in .env}
+      WORKER_POOL: ${WORKER_POOL:-pc}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-1}
+      STORAGE_UID: ${STORAGE_UID:-}
+      ALLOWED_UIDS: ${ALLOWED_UIDS}
+      BACKUP_HOUR: ${BACKUP_HOUR:-3}
+      TZ: ${TZ:-Europe/London}
+      S3_ENDPOINT: http://s3:8333
+      S3_BUCKET: ${S3_BUCKET:-latest-avenue}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY in .env}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY in .env}
+    volumes:
+      - ${DATA_DIR:-edit-data}:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+      s3:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8795/healthz',timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:7.4-alpine}
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  s3:
+    image: ${S3_IMAGE:-chrislusf/seaweedfs:4.54}
+    restart: unless-stopped
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY in .env}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY in .env}
+    # The access key comes from .env: written to a file inside the container at start.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        printf '{"identities":[{"name":"editor","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Admin","Read","Write","List","Tagging"]}]}'
+        "$$S3_ACCESS_KEY" "$$S3_SECRET_KEY" > /tmp/s3.json &&
+        exec /entrypoint.sh server -dir=/data -s3 -s3.config=/tmp/s3.json -master.volumeSizeLimitMB=1024 -volume.max=0
+    volumes:
+      - s3-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:8333/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  heartbeat:
+    image: *edit-image
+    restart: unless-stopped
+    command: ["python3", "/opt/cloud/heartbeat.py"]
+    environment:
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID}
+      HEARTBEAT_CREDENTIALS: /secrets/heartbeat-sa.json
+      HEARTBEAT_STATUS_URL: http://gateway:8080/status
+      VSE_VERSION: ${VSE_VERSION:-}
+      FIRESTORE_URL: ${FIRESTORE_URL:-}
+      HEARTBEAT_SECONDS: ${HEARTBEAT_SECONDS:-60}
+    volumes:
+      - ${SECRETS_DIR:-./secrets}:/secrets:ro
+
+  cloudflared:
+    image: ${CLOUDFLARED_IMAGE:-cloudflare/cloudflared:2026.10.7}
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "--metrics", "0.0.0.0:2000", "run"]
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env (Cloudflare Zero Trust > Networks > Tunnels)}
+    depends_on:
+      gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "cloudflared", "tunnel", "--metrics", "127.0.0.1:2000", "ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  edit-data:
+  redis-data:
+  s3-data:
