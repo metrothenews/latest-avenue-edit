@@ -50,10 +50,10 @@ def _model(name, models_dir):
     return _models[key]
 
 
-def _cache_path(path, model, cache_dir, track):
+def _cache_path(path, model, cache_dir, track, prompt):
     st = os.stat(path)
-    key = hashlib.sha1("{:s}|{:d}|{:f}|{!s}|{!s}".format(
-        os.path.abspath(path), st.st_size, st.st_mtime, model, track).encode()).hexdigest()[:12]
+    key = hashlib.sha1("{:s}|{:d}|{:f}|{!s}|{!s}|{!s}".format(
+        os.path.abspath(path), st.st_size, st.st_mtime, model, track, prompt).encode()).hexdigest()[:12]
     safe_model = re.sub(r"[^A-Za-z0-9._-]", "_", os.path.basename(str(model).rstrip("/")))
     return os.path.join(cache_dir, "{:s}.{:s}.{:s}.words.json".format(
         os.path.basename(path), safe_model, key))
@@ -62,7 +62,7 @@ def _cache_path(path, model, cache_dir, track):
 def transcribe(path, model=DEFAULT_MODEL, *, prompt=None, language="en", track=None,
                cache_dir=None, models_dir=None):
     """-> {"words": [{"text", "norm", "start", "end", "p"}], "text", "duration", "model"}."""
-    cache = _cache_path(path, model, cache_dir, track) if cache_dir else None
+    cache = _cache_path(path, model, cache_dir, track, prompt) if cache_dir else None
     if cache and os.path.exists(cache):
         with open(cache, encoding="utf-8") as fh:
             return json.load(fh)

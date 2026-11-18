@@ -1,0 +1,12 @@
+# The assembly's own Python environment (outside the editor), e.g.
+#   python3 -m venv assembly-env
+#   assembly-env/bin/pip install -r tools/vse_assembly/requirements.txt
+#   assembly-env/bin/pip install --index-url https://download.pytorch.org/whl/cpu torch   # optional
+# System tools: ffmpeg/ffprobe, pdftotext (poppler-utils).
+faster-whisper>=1.1
+rapidfuzz>=3
+numpy
+pillow
+# Optional, for MobileCLIP2-S0 picture grouping (else a model-free colour signature is used).
+# Install torch from the CPU index above first: the default PyPI wheel carries CUDA (~5 GB).
+open_clip_torch>=3.2
