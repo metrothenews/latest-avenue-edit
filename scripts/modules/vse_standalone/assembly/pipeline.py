@@ -121,7 +121,7 @@ def assemble(media, script=None, *, model=None, image_backend=None, cache_dir=No
 # -----------------------------------------------------------------------------
 # No screenplay: a rough one from speech and looks.
 
-def _utterances(words, gap=0.9, max_words=40):
+def _utterances(words, gap=0.85, max_words=40):
     """Split speech at pauses (a change of speaker usually has one), not at full stops."""
     out, cur = [], []
     for w in words:

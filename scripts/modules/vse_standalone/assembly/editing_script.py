@@ -71,7 +71,7 @@ def supervisor_reserved():
 # -----------------------------------------------------------------------------
 # Building.
 
-SLATE = re.compile(r"\b(?:scene|seen|see|sin)\s+(\w+)[\s,.-]+(?:shot\s+\w+[\s,.-]+)?take\s+(\w+)", re.I)
+SLATE = re.compile(r"\b(?:scene|seen|seeing|see|sin)\s+(\w+)[\s,.-]+(?:shot\s+\w+[\s,.-]+)?take\s+(\w+)", re.I)
 _WORD_NUM = {w: i for i, w in enumerate(_match._ONES)}
 _WORD_NUM.update({"won": 1, "to": 2, "too": 2, "for": 4, "ate": 8})   # how numbers get misheard
 

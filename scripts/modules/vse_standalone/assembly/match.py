@@ -49,13 +49,25 @@ def _number_words(n):
     return [str(n)]
 
 
+CONTRACTIONS = {"it's": "it is", "there's": "there is", "that's": "that is", "what's": "what is",
+                "he's": "he is", "she's": "she is", "i'm": "i am", "you're": "you are",
+                "we're": "we are", "they're": "they are", "can't": "can not", "won't": "will not",
+                "don't": "do not", "doesn't": "does not", "didn't": "did not", "isn't": "is not",
+                "aren't": "are not", "wasn't": "was not", "i'll": "i will", "you'll": "you will",
+                "we'll": "we will", "i've": "i have", "you've": "you have", "we've": "we have",
+                "i'd": "i would", "let's": "let us", "gonna": "going to", "wanna": "want to"}
+
+
 def tokens(text):
-    """Script or heard text -> matching tokens (lower case, digits spelled out)."""
+    """Script or heard text -> matching tokens (lower case, digits spelled out, contractions
+    expanded, so "It's" and "It is" match)."""
     out = []
     for raw in re.findall(r"[A-Za-z0-9'’]+", text):
         word = raw.lower().replace("’", "'").strip("'")
         if word.isdigit() and len(word) <= 3:
             out += _number_words(int(word))
+        elif word in CONTRACTIONS:
+            out += CONTRACTIONS[word].split()
         elif word:
             out.append(word.replace("'", ""))
     return out
@@ -150,6 +162,15 @@ def align(heard, script_tokens):
             s = sims[key] = s
         return s
 
+    merges = {}
+
+    def merged(i, j):
+        key = (heard[i][0] + heard[i + 1][0], script_tokens[j][0])
+        v = merges.get(key)
+        if v is None:
+            v = merges[key] = word_similarity(*key) if len(key[1]) >= 3 else 0.0
+        return v
+
     # score[i][j]: best alignment ending with heard[i-1] and script[j-1] consumed.
     neg = -1e9
     score = [[0.0] * (m + 1) for _ in range(n + 1)]
@@ -167,6 +188,11 @@ def align(heard, script_tokens):
             candidates.append((prev[j - 1] + pair, (i - 1, j - 1, "pair")))
             if is_start[jj] and best_end_prev[1] is not None:
                 candidates.append((best_end_prev[0] + pair, (i - 1, best_end_prev[1], "jump")))
+            if i >= 2:
+                # Two heard tokens for one script word ("and go" for "ago", "every one").
+                ms = merged(i - 2, jj)
+                if ms >= MATCH_MIN:
+                    candidates.append((score[i - 2][j - 1] + _pair_score(ms) - 0.2, (i - 2, j - 1, "merge")))
             candidates.append((prev[j] + SKIP_HEARD, (i - 1, j, "heard")))
             candidates.append((row[j - 1] + SKIP_SCRIPT, (i, j - 1, "script")))
             value, ptr = max(candidates, key=lambda c: c[0])
@@ -180,7 +206,10 @@ def align(heard, script_tokens):
     i, j = best[1], best[2]
     while i > 0 and j > 0 and back[i][j] is not None and score[i][j] > 0:
         pi, pj, kind = back[i][j]
-        if kind in ("pair", "jump"):
+        if kind == "merge":
+            ms = merged(i - 2, j - 1)
+            pairs += [(i - 1, j - 1, ms), (i - 2, j - 1, ms)]
+        elif kind in ("pair", "jump"):
             s = sim(i - 1, j - 1)
             if s >= MATCH_MIN:
                 pairs.append((i - 1, j - 1, s))

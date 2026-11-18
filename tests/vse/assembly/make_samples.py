@@ -7,7 +7,7 @@
 Make a small test shoot: a two-scene screenplay PDF, takes with spoken dialogue (espeak-ng),
 a voice-over recorded on its own, B-roll with no speech, and a still photo.
 
-    python3 tests/vse/assembly/make_samples.py OUTPUT_FOLDER
+    python3 tests/vse/assembly/make_samples.py OUTPUT_FOLDER [--tiny] [--no-music]
 
 Writes ``OUTPUT_FOLDER/script.pdf``, ``OUTPUT_FOLDER/media/...`` and ``OUTPUT_FOLDER/truth.json``
 (which take says which script line), so tests can check the assembly. Needs ffmpeg and
@@ -82,18 +82,33 @@ TAKES = [
         (CREW, "Scene two, take one.", None), (DANIEL, LINES["L5"], "L5")]),
     ("A003_C002_S2_T2.mov", "wide2", [
         (DANIEL, "Terrible coffee sounds perfect.", "L5")]),
+    # No slate in the name, and the camera's own sound is useless (wind): only the clap
+    # at the head ties it to its recorder file.
+    ("IMG_0042.MOV", "wide2", [
+        (DANIEL, LINES["L5"], "L5")]),
 ]
 VOICE_OVER = ("VO_MAYA_01.wav", [(MAYA, LINES["L6"], "L6")])
 BROLL = ("A003_C003_BROLL.mov", "broll2", 4.0)
 
-PICTURES = {
-    # Scene 1: a slow zoom into the same fractal (the close-up is a tighter crop of it).
-    "wide1": "mandelbrot=size=640x360:rate=24:start_scale=3",
-    "close1": "mandelbrot=size=640x360:rate=24:start_scale=3,crop=320:180:200:90,scale=640:360",
-    # Scene 2: a cellular automaton in green; the B-roll is the same look.
-    "wide2": "life=size=640x360:rate=24:seed=7:mold=10:life_color=#40ff80:death_color=#002010",
-    "broll2": "life=size=640x360:rate=24:seed=9:mold=10:life_color=#40ff80:death_color=#002010",
-}
+# Frame size, rate and sound format; --tiny makes 12x12 pixel, 16 kHz mono files.
+FORMAT = {"w": 640, "h": 360, "rate": 24, "ar": 48000, "ac": 2, "abr": "128k"}
+
+
+def pictures():
+    w, h, r = FORMAT["w"], FORMAT["h"], FORMAT["rate"]
+    return {
+        # Scene 1: a slow zoom into the same fractal (the close-up is a tighter crop of it).
+        "wide1": "mandelbrot=size={w}x{h}:rate={r}:start_scale=3".format(w=w, h=h, r=r),
+        "close1": "mandelbrot=size={w}x{h}:rate={r}:start_scale=3,crop={cw}:{ch}:{x}:{y},scale={w}:{h}".format(
+            w=w, h=h, r=r, cw=w // 2, ch=h // 2, x=w * 5 // 16, y=h // 4),
+        # Scene 2: a cellular automaton in green; the B-roll is the same look.
+        "wide2": "life=size={w}x{h}:rate={r}:seed=7:mold=10:life_color=#40ff80:death_color=#002010".format(w=w, h=h, r=r),
+        "broll2": "life=size={w}x{h}:rate={r}:seed=9:mold=10:life_color=#40ff80:death_color=#002010".format(w=w, h=h, r=r),
+        # Music video pictures: three more looks.
+        "red": "testsrc2=size={w}x{h}:rate={r},hue=h=0:s=2,colorchannelmixer=rr=1:gg=0.2:bb=0.2".format(w=w, h=h, r=r),
+        "blue": "smptebars=size={w}x{h}:rate={r},colorchannelmixer=rr=0.1:gg=0.3:bb=1".format(w=w, h=h, r=r),
+        "grey": "cellauto=size={w}x{h}:rate={r}:rule=110,format=gray".format(w=w, h=h, r=r),
+    }
 
 
 # -----------------------------------------------------------------------------
@@ -214,8 +229,15 @@ def make_speech(parts, path, work, gap=0.8, lead=0.5):
         t += len(silence) / 2 / rate
         dur = len(frames) / 2 / rate
         if line_id:
-            timeline.append({"line": line_id, "text": text, "start": round(t, 2),
-                             "end": round(t + dur, 2)})
+            # Where the voice really starts and stops (espeak pads with silence).
+            import array
+            pcm = array.array("h", frames)
+            loud = [k for k in range(0, len(pcm), rate // 100) if abs(pcm[k]) > 500
+                    or max(abs(v) for v in pcm[k:k + rate // 100]) > 500]
+            a = loud[0] / rate if loud else 0.0
+            b = (loud[-1] + rate // 100) / rate if loud else dur
+            timeline.append({"line": line_id, "text": text, "start": round(t + a, 2),
+                             "end": round(t + b, 2)})
         t += dur
         os.remove(tmp)
     chunks.append(b"\0\0" * int(rate * lead))
@@ -230,76 +252,198 @@ def make_speech(parts, path, work, gap=0.8, lead=0.5):
 RECORDERS = [
     ("A001_C001_S1_T1.mov", "ZOOM0001.WAV", 2.5, True),
     ("A003_C001_S2_T1.mov", "ZOOM0002.WAV", 1.7, False),
+    ("IMG_0042.MOV", "ZOOM0003.WAV", 0.9, False),        # synced by the clap
 ]
+CLAP_TAKES = {"IMG_0042.MOV"}
+WIND = "anoisesrc=color=brown:amplitude=0.3:sample_rate=16000"
 SCRATCH = "highpass=f=300,lowpass=f=3000,volume=0.4"
+
+
+def add_clap(wav, at=0.25):
+    """A clap (a short, very loud noise burst) into a 16-bit mono WAV, `at` seconds in."""
+    import random
+    with wave.open(wav) as w:
+        params, frames = w.getparams(), bytearray(w.readframes(w.getnframes()))
+    rate, rng = params.framerate, random.Random(5)
+    start, n = int(at * rate), int(0.03 * rate)
+    for k in range(n):
+        v = int(30000 * (rng.random() * 2 - 1) * (1 - k / n))
+        frames[2 * (start + k):2 * (start + k) + 2] = max(-32767, min(32767, v)).to_bytes(2, "little", signed=True)
+    with wave.open(wav, "wb") as w:
+        w.setparams(params)
+        w.writeframes(bytes(frames))
+
+
+def _scaled_copy(src, dst, gain):
+    import array
+    with wave.open(src) as w:
+        params, data = w.getparams(), array.array("h", w.readframes(w.getnframes()))
+    data = array.array("h", (int(v * gain) for v in data))
+    with wave.open(dst, "wb") as w:
+        w.setparams(params)
+        w.writeframes(data.tobytes())
 
 
 def make_recorder(speech, path, lead, timecode_seconds=None):
     """Clean sound starting `lead` seconds before the camera, with a little room tone."""
+    ar = FORMAT["ar"]
     cmd = ["ffmpeg", "-v", "error", "-y", "-i", speech, "-f", "lavfi", "-i",
-           "anoisesrc=color=pink:amplitude=0.004:sample_rate=48000",
-           "-filter_complex", "[0:a]aresample=48000,adelay={:d}:all=1,apad=pad_dur=1[s];"
-           "[s][1:a]amix=inputs=2:duration=first:normalize=0".format(int(lead * 1000)),
-           "-ar", "48000", "-ac", "1", "-c:a", "pcm_s24le"]
+           "anoisesrc=color=pink:amplitude=0.004:sample_rate={:d}".format(ar),
+           "-filter_complex", "[0:a]aresample={:d},adelay={:d}:all=1,apad=pad_dur=1[s];"
+           "[s][1:a]amix=inputs=2:duration=first:normalize=0".format(ar, int(lead * 1000)),
+           "-ar", str(ar), "-ac", "1", "-c:a", "pcm_s16le"]
     if timecode_seconds is not None:
         cmd += ["-write_bext", "1", "-metadata",
-                "time_reference={:d}".format(int(round((timecode_seconds - lead) * 48000)))]
+                "time_reference={:d}".format(int(round((timecode_seconds - lead) * ar)))]
     subprocess.run(cmd + [path], check=True)
 
 
-def make_video(path, picture, duration, audio=None, timecode="01:00:00:00", scratch=False):
+def make_video(path, picture, duration, audio=None, timecode="01:00:00:00", scratch=False,
+               wind=False):
+    ar = FORMAT["ar"]
     cmd = ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-t", "{:.3f}".format(duration),
-           "-i", PICTURES[picture]]
+           "-i", pictures()[picture]]
     if audio:
         cmd += ["-i", audio]
     else:
         cmd += ["-f", "lavfi", "-t", "{:.3f}".format(duration),
-                "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"]
-    if scratch:
-        cmd += ["-af", SCRATCH]
-    cmd += ["-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-preset", "ultrafast",
-            "-pix_fmt", "yuv420p", "-c:a", "aac", "-ar", "48000", "-ac", "2", "-shortest",
-            "-timecode", timecode, path]
+                "-i", "anullsrc=channel_layout=mono:sample_rate={:d}".format(ar)]
+    if wind:
+        # Wind over the camera's microphone: the speech is buried, the clap still stands out.
+        cmd += ["-f", "lavfi", "-t", "{:.3f}".format(duration), "-i", WIND, "-filter_complex",
+                "[1:a][2:a]amix=inputs=2:duration=first:normalize=0[a]",
+                "-map", "0:v", "-map", "[a]"]
+    else:
+        if scratch:
+            cmd += ["-af", SCRATCH]
+        cmd += ["-map", "0:v", "-map", "1:a"]
+    cmd += ["-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", FORMAT["abr"], "-ar", str(ar), "-ac", str(FORMAT["ac"]),
+            "-shortest", "-timecode", timecode, path]
     subprocess.run(cmd, check=True)
 
 
+# -----------------------------------------------------------------------------
+# Music: a drum loop with sung (spoken) lyric lines on it.
+
+LYRICS = ["city lights are calling me", "I keep driving through the night",
+          "never looking back again", "turn it up and feel alive"]
+
+
+def make_song(path, lyrics_path, work, bpm=120.0, seconds=16.0, start=0.25):
+    """Kick on every beat (accented downbeat), off-beat hi-hats, a lyric line every two bars
+    from bar 2. -> {"tempo", "beats", "lines": [{"text", "start"}]}."""
+    import math
+    import random
+    rate, rng = FORMAT["ar"], random.Random(1)
+    n = int(seconds * rate)
+    x = [0.03 * math.sin(2 * math.pi * 220 * k / rate) for k in range(n)]
+    beat, beats = 60.0 / bpm, []
+    k = 0
+    while start + k * beat < seconds - 0.3:
+        b = start + k * beat
+        beats.append(round(b, 3))
+        i, m = int(b * rate), int(0.12 * rate)
+        amp = 0.9 if k % 4 == 0 else 0.55
+        for j in range(min(m, n - i)):
+            x[i + j] += amp * math.exp(-j / rate * 30) * math.sin(2 * math.pi * 60 * j / rate)
+        h = int((b + beat / 2) * rate)
+        for j in range(min(int(0.02 * rate), max(0, n - h))):
+            x[h + j] += 0.15 * (rng.random() * 2 - 1) * math.exp(-j / rate * 150)
+        k += 1
+    lines = []
+    for n_line, text in enumerate(LYRICS):
+        at = start + (4 + 8 * n_line) * beat + 0.05          # just after a bar start
+        tmp = os.path.join(work, "lyric{:d}.wav".format(n_line))
+        _speak(MAYA, text, tmp)
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", tmp, "-ar", str(rate), "-ac", "1",
+                        "-c:a", "pcm_s16le", tmp + ".r.wav"], check=True)
+        with wave.open(tmp + ".r.wav") as w:
+            raw = w.readframes(w.getnframes())
+        i0 = int(at * rate)
+        for j in range(0, len(raw) // 2):
+            if i0 + j < n:
+                x[i0 + j] += 0.8 * int.from_bytes(raw[2 * j:2 * j + 2], "little", signed=True) / 32768
+        lines.append({"text": text, "start": round(at, 3)})
+        os.remove(tmp)
+        os.remove(tmp + ".r.wav")
+    peak = max(abs(v) for v in x) or 1
+    with wave.open(path, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(b"".join(int(v / peak * 0.9 * 32767).to_bytes(2, "little", signed=True) for v in x))
+    with open(lyrics_path, "w") as fh:
+        fh.write("[Verse]\n" + "\n".join(LYRICS) + "\n")
+    return {"tempo": bpm, "beats": beats, "lines": lines}
+
+
 def main():
-    out = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else "assembly_samples")
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("output", nargs="?", default="assembly_samples")
+    parser.add_argument("--tiny", action="store_true",
+                        help="12x12 pixel video and 16 kHz mono sound (a whole shoot in about 1 MB)")
+    parser.add_argument("--no-music", action="store_true", help="skip the music video shoot")
+    args = parser.parse_args()
+    if args.tiny:
+        FORMAT.update(w=12, h=12, ar=16000, ac=1, abr="32k")
+    out = os.path.abspath(args.output)
     media = os.path.join(out, "media")
     work = os.path.join(out, ".work")
     for d in (media, work):
         os.makedirs(d, exist_ok=True)
     write_pdf(os.path.join(out, "script.pdf"), script_pages())
 
-    truth = {"lines": LINES, "takes": {}, "sync": {}}
+    truth = {"lines": LINES, "takes": {}, "sync": {}, "format": dict(FORMAT)}
     recorders = {r[0]: r for r in RECORDERS}
     for n, (name, picture, parts) in enumerate(TAKES):
         wav = os.path.join(work, name + ".wav")
         timeline, duration = make_speech(parts, wav, work)
-        make_video(os.path.join(media, name), picture, duration, wav,
-                   timecode="01:{:02d}:00:00".format(n + 1), scratch=name in recorders)
+        camera = wav
+        if name in CLAP_TAKES:
+            # The camera hears the speech faintly under wind, the clap loud; the recorder
+            # hears both clearly.
+            camera = os.path.join(work, name + ".camera.wav")
+            _scaled_copy(wav, camera, 0.15)
+            add_clap(camera)
+            add_clap(wav)
+        make_video(os.path.join(media, name), picture, duration, camera,
+                   timecode="01:{:02d}:00:00".format(n + 1), scratch=name in recorders,
+                   wind=name in CLAP_TAKES)
         truth["takes"][name] = timeline
         if name in recorders:
             _take, rec, lead, with_tc = recorders[name]
             make_recorder(wav, os.path.join(media, rec), lead,
                           3600 + 60 * (n + 1) if with_tc else None)
-            truth["sync"][name] = {"audio": rec, "offset": lead,
-                                   "method": "timecode" if with_tc else "waveform"}
+            method = "timecode" if with_tc else "clap" if name in CLAP_TAKES else "waveform"
+            truth["sync"][name] = {"audio": rec, "offset": lead, "method": method}
     name, parts = VOICE_OVER
-    timeline, _ = make_speech(parts, os.path.join(media, name), work)
+    vo = os.path.join(work, name)
+    timeline, _ = make_speech(parts, vo, work)
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", vo, "-ar", str(FORMAT["ar"]), "-ac", "1",
+                    "-c:a", "pcm_s16le", os.path.join(media, name)], check=True)
     truth["takes"][name] = timeline
     name, picture, duration = BROLL
     make_video(os.path.join(media, name), picture, duration, timecode="01:10:00:00")
     truth["takes"][name] = []
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", PICTURES["wide2"],
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", pictures()["wide2"],
                     "-frames:v", "1", os.path.join(media, "STILL_diner_sign.jpg")], check=True)
+
+    if not args.no_music:
+        music = os.path.join(out, "music")
+        os.makedirs(music, exist_ok=True)
+        truth["music"] = make_song(os.path.join(music, "song.wav"), os.path.join(out, "lyrics.txt"), work)
+        for k, look in enumerate(("red", "blue", "grey", "wide1", "wide2")):
+            make_video(os.path.join(music, "mv_{:02d}_{:s}.mp4".format(k + 1, look)), look, 6.0,
+                       timecode="02:{:02d}:00:00".format(k))
     for f in os.listdir(work):
         os.remove(os.path.join(work, f))
     os.rmdir(work)
     with open(os.path.join(out, "truth.json"), "w") as fh:
         json.dump(truth, fh, indent=1)
-    print("wrote", out)
-
+    size = sum(os.path.getsize(os.path.join(r, f)) for r, _d, fs in os.walk(out) for f in fs)
+    print("wrote {:s} ({:.1f} MB)".format(out, size / 1e6))
 
 if __name__ == "__main__":
     main()
