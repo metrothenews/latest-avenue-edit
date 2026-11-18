@@ -438,18 +438,20 @@ def fetch_drive_folder(folder_id: str, access_token: str, dest: typing.Optional[
 
 
 @tool(mutates=False)
-def upload_to_drive(filepath: str, folder_id: str, access_token: str,
+def upload_to_drive(filepath: str, access_token: str, folder_id: typing.Optional[str] = None,
                     name: typing.Optional[str] = None) -> dict:
-    """Upload a file (a render, an exported sequence, an editing script) into a Google Drive
-    folder, in the background. Poll with job_status.
+    """Upload a file (a render, an exported sequence, an editing script) to Google Drive, in
+    the background. Poll with job_status; the result has the new file's id and folder.
 
     :arg access_token: A Google OAuth access token with drive.file. Used for this job only, not stored.
+    :arg folder_id: Default: the app's own "latest avenue exports" folder in My Drive (made on
+      first use). With drive.file the app can only write into folders it made.
     """
     path = _path(filepath)
     meta = os.path.join(os.path.dirname(path), ".drive")
     os.makedirs(meta, exist_ok=True)
     stem = os.path.basename(path)
-    args = [_python(), "-m", "vse_standalone.assembly.drive", "upload", path, folder_id]
+    args = [_python(), "-m", "vse_standalone.assembly.drive", "upload", path] + ([folder_id] if folder_id else [])
     if name:
         args += ["--name", name]
     return _start_job("upload_to_drive", args, os.path.join(meta, stem + ".upload.log"),

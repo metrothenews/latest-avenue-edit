@@ -34,7 +34,7 @@ FILES = {
     "sub": [("f2", "ZOOM0001.WAV", "audio/wav", b"RIFF-wav" * 500)],
 }
 BLOBS = {fid: data for items in FILES.values() for fid, _n, _m, data in items if data}
-state = {"downloads": 0, "upload": bytearray(), "uploaded": None, "chunks": 0}
+state = {"downloads": 0, "upload": bytearray(), "uploaded": None, "chunks": 0, "created": []}
 
 
 class Drive(http.server.BaseHTTPRequestHandler):
@@ -58,6 +58,9 @@ class Drive(http.server.BaseHTTPRequestHandler):
             return
         url = urllib.parse.urlparse(self.path)
         qs = urllib.parse.parse_qs(url.query)
+        if url.path == "/drive/v3/files" and "name = " in qs["q"][0]:
+            name = qs["q"][0].split("'")[1]
+            return self._json({"files": [f for f in state["created"] if f["name"] == name]})
         if url.path == "/drive/v3/files":
             parent = qs["q"][0].split("'")[1]
             items = [{"id": fid, "name": n, "mimeType": m, "modifiedTime": "2026-11-18T00:00:00Z",
@@ -83,6 +86,10 @@ class Drive(http.server.BaseHTTPRequestHandler):
         if not self._auth():
             return
         meta = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        if self.path.startswith("/drive/v3/files"):          # create a folder
+            made = {"id": "folder{:d}".format(len(state["created"]) + 1), "name": meta["name"]}
+            state["created"].append(made)
+            return self._json(made)
         state["meta"], state["size"] = meta, int(self.headers["X-Upload-Content-Length"])
         self.send_response(200)
         self.send_header("Location", "http://127.0.0.1:{:d}/session/1".format(self.server.server_port))
@@ -144,6 +151,10 @@ def main():
         r = drive.upload(TOKEN, up, "outfolder", log=quiet)
         check("resumable upload in chunks", r["id"] == "new1" and bytes(state["upload"]) == open(up, "rb").read()
               and state["chunks"] == 3 and state["meta"]["parents"] == ["outfolder"], (r, state["chunks"]))
+        first = drive.ensure_folder(TOKEN)
+        again = drive.ensure_folder(TOKEN)
+        check("the app's export folder is made once, then found", first == again and len(state["created"]) == 1,
+              state["created"])
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
         httpd.shutdown()

@@ -37,7 +37,7 @@ until the editor restarts. (`assembly_job` is the older name of `job_status`; bo
 | Step | Tool | Params | Result |
 |---|---|---|---|
 | 0 | `assembly_status` | none | `{python, packages, transcription, image_model, device, tools}`: is the PC set up |
-| 1 | `fetch_drive_folder` → job | `folder_id`, `access_token` (Google OAuth, `drive.readonly`; used once, not stored), `dest` (optional, default `drive/<folder_id>`) | job `result`: `{folder, files: [{name, path, bytes, skipped}]}`. Google Docs are exported as PDF |
+| 1 | `fetch_drive_folder` → job | `folder_id` (the id, or the folder's drive.google.com link), `access_token` (see "Google Drive sign-in" below), `dest` (optional, default `drive/<folder_id>`) | job `result`: `{folder, files: [{name, path, bytes, skipped, kind}], fetched}`. Google Docs come down as PDF. Then use `drive/<folder_id>` as `media_folder` |
 | 1 | `probe_media` | `filepath` (file or folder) | `{folder, files: [{path, name, kind: video/audio/image, duration, fps, width, height, timecode, audio_tracks, error?}]}` |
 | 2 | `save_upload` | `name` (e.g. `script.pdf`), `data_base64` (≤ 700 KB decoded per call), `folder` (default `uploads`), `append` (send big files in parts: first call without, the rest with) | `{filepath, relative, bytes}`; pass `relative` (e.g. `uploads/script.pdf`) to `read_screenplay` / `start_assembly` |
 | 2 | `read_screenplay` | `filepath` (.pdf/.fountain/.txt), `include_text` | `{title, characters: [{name, lines}], scenes: [{id, heading, int_ext, location, time, elements: [{id, type, character?, text, parentheticals?, extensions?}]}], dialogue_lines}` |
@@ -53,7 +53,7 @@ until the editor restarts. (`assembly_job` is the older name of `job_status`; bo
 | 7 | `render_editing_script` | `filepath`, `output` (.mp4) | `{filepath, duration, events}` (ffmpeg, no timeline) |
 | 7 | `render_video` | `filepath`, `format` | the fine-tuned timeline, rendered |
 | 7 | `export_sequence` | `filepath` (editing script), `output`, `format`: `otio` / `fcpxml` / `xml` (Premiere, FCP7) / `edl` (default: from the extension) | `{filepath, format, events, duration}` |
-| 7 | `upload_to_drive` → job | `filepath`, `folder_id`, `access_token` (`drive.file`), `name` | job `result`: `{id, name, bytes}` |
+| 7 | `upload_to_drive` → job | `filepath`, `access_token`, `folder_id` (optional: default the app's own "latest avenue exports" folder, made on first use), `name` | job `result`: `{id, name, bytes, folder_id}` |
 
 ### `get_editing_script` formats
 
@@ -68,6 +68,45 @@ until the editor restarts. (`assembly_job` is the older name of `job_status`; bo
   take-swap UI needs). `heard` is what was actually said in that take.
 - `json`: the whole document (format in `scripts/modules/vse_standalone/assembly/editing_script.py`),
   including `media[clip].shots[].thumbnail` (JPEG paths for thumbnails) and word timings.
+
+## Google Drive sign-in: what the site sends
+
+Decided shape (the editor never sees a Google password, refresh token or client secret):
+
+1. **The site gets the token.** At sign-in (or the first time the user opens "From Google
+   Drive"), the site asks Google for two extra scopes with the Firebase Google provider:
+
+   ```js
+   const provider = new GoogleAuthProvider();
+   provider.addScope("https://www.googleapis.com/auth/drive.readonly"); // read the chosen folder
+   provider.addScope("https://www.googleapis.com/auth/drive.file");     // write exports it creates
+   const result = await signInWithPopup(auth, provider);   // or reauthenticateWithPopup(user, provider)
+   const driveToken = GoogleAuthProvider.credentialFromResult(result).accessToken;
+   ```
+
+   It is a Google **OAuth access token** (not the Firebase ID token): valid about an hour,
+   never refreshed by Firebase. Keep it in memory only (a variable or React state), not in
+   localStorage, cookies or the URL.
+2. **The site sends it per call**, as the `access_token` parameter of `fetch_drive_folder` and
+   `upload_to_drive`, in the JSON body of `POST /api/rpc` (HTTPS). The Firebase ID token stays in
+   the `Authorization: Bearer` header as for every call: the gateway checks that one; the Drive
+   token goes straight through to the job.
+3. **The editor uses it once and forgets it**: it is put in the background job's environment
+   (never on a command line, in a file or in a log), used for that one download or upload, and
+   gone when the job ends. Nothing in the editor's logs or dataset records call parameters.
+4. **When it has expired** (after about an hour, or access was withdrawn) the job fails with
+   `error`/log text containing "sign in to Drive again". The page then calls
+   `reauthenticateWithPopup` with the same provider for a fresh token and repeats the call.
+
+Scopes: `drive.readonly` reads the folder the user names (any of their folders);
+`drive.file` lets the editor create files only in folders it made itself, so exports go to
+"latest avenue exports" in My Drive unless a folder the app made is named. Both are Google
+"restricted/sensitive" scopes: fine for the owner's account while the Google Cloud project's
+OAuth consent screen is in testing mode with Sam's address as a test user; offering it to the
+public needs Google's verification.
+
+The folder id: the last part of `https://drive.google.com/drive/folders/<id>`; the whole link is
+accepted too.
 
 ## Tested end to end
 

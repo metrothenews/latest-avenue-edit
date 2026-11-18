@@ -142,6 +142,24 @@ def _mtime(f):
         return time.time()
 
 
+APP_FOLDER = "latest avenue exports"
+
+
+def ensure_folder(token, name=APP_FOLDER):
+    """The app's own folder in My Drive, created on first use. With the narrow drive.file
+    scope the app may only write into folders it created, so exports go here by default."""
+    q = "name = '{:s}' and mimeType = '{:s}' and 'root' in parents and trashed = false".format(
+        name.replace("'", "\\'"), FOLDER)
+    found = _json(token, API + "/drive/v3/files?" + urllib.parse.urlencode(
+        {"q": q, "fields": "files(id,name)", "spaces": "drive"})).get("files", [])
+    if found:
+        return found[0]["id"]
+    body = json.dumps({"name": name, "mimeType": FOLDER, "parents": ["root"]}).encode()
+    made = _json(token, API + "/drive/v3/files?fields=id", data=body, method="POST",
+                 headers={"Content-Type": "application/json; charset=UTF-8"})
+    return made["id"]
+
+
 def upload(token, path, folder_id, name=None, log=print):
     """Resumable upload of a local file into a Drive folder. -> {id, name, bytes}."""
     import mimetypes
@@ -184,7 +202,7 @@ def main(argv=None):
     p.add_argument("dest")
     p = sub.add_parser("upload")
     p.add_argument("path")
-    p.add_argument("folder_id")
+    p.add_argument("folder_id", nargs="?", help="default: the app's own folder, made on first use")
     p.add_argument("--name")
     args = parser.parse_args(argv)
     token = os.environ.get("GOOGLE_ACCESS_TOKEN")
@@ -199,7 +217,9 @@ def main(argv=None):
             with open(os.path.join(args.dest, ".drive.json"), "w", encoding="utf-8") as fh:
                 json.dump(dict(result, folder_id=args.folder_id, time=time.time()), fh, indent=1)
         else:
-            result = upload(token, args.path, args.folder_id, args.name, log)
+            folder = args.folder_id or ensure_folder(token)
+            result = upload(token, args.path, folder, args.name, log)
+            result["folder_id"] = folder
     except DriveError as ex:
         sys.exit(str(ex))
     json.dump(result, sys.stdout)
