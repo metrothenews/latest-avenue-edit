@@ -122,6 +122,33 @@ def embed(image_paths, backend):
     return out
 
 
+def text_scores(texts, embeddings, top=8):
+    """How well each line's words describe each picture (MobileCLIP text and image encoders).
+
+    texts: {line id: text}. embeddings: {clip path: unit image vector}. -> {line id: {path: score}}
+    for the `top` best pictures of each line. Only for the "mobileclip" backend.
+    """
+    import numpy
+    import open_clip
+    import torch
+    model, _pre, on = _mobileclip()
+    tokenizer = open_clip.get_tokenizer(MODEL)
+    keys = list(embeddings)
+    if not keys or not texts:
+        return {}
+    pics = numpy.stack([embeddings[k] for k in keys])
+    ids = list(texts)
+    with torch.no_grad():
+        t = model.encode_text(tokenizer(["a photo of " + texts[i] for i in ids]).to(on)).float()
+        t = (t / t.norm(dim=-1, keepdim=True)).cpu().numpy()
+    sims = t @ pics.T
+    out = {}
+    for row, lid in enumerate(ids):
+        best = numpy.argsort(-sims[row])[:top]
+        out[lid] = {keys[k]: round(float(sims[row, k]), 4) for k in best}
+    return out
+
+
 def describe_clips(clips, cache_dir, backend=None, scene_threshold=0.3):
     """Shots, thumbnails and an embedding for every video/image clip.
 

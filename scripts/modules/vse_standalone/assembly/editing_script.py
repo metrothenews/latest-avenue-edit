@@ -131,7 +131,8 @@ def _padded(take, words, media_duration):
     return round(cut_in, 3), round(cut_out, 3)
 
 
-def build(script, clips, transcripts, matches, groups=None, visuals=None, fps=None, sound=None):
+def build(script, clips, transcripts, matches, groups=None, visuals=None, fps=None, sound=None,
+          cover_scores=None):
     """Put it all together.
 
     script: ``screenplay.parse`` result. clips: probe dicts. transcripts: {path: transcribe
@@ -220,6 +221,9 @@ def build(script, clips, transcripts, matches, groups=None, visuals=None, fps=No
                         key=lambda s: int(s[1:]) if s[1:].isdigit() else 0)
         doc["groups"].append({"id": gid, "clips": cids, "scenes": scenes})
 
+    if cover_scores:
+        doc["cover_scores"] = {lid: {ids[p]: sc for p, sc in by.items() if p in ids}
+                               for lid, by in cover_scores.items()}
     for scene in doc["scenes"]:
         scene_groups = [g for g in doc["groups"] if scene["id"] in g["scenes"]]
         scene["group"] = scene_groups[0]["id"] if scene_groups else None
@@ -273,7 +277,8 @@ def _fill_cuts(doc, scene):
     for k, el in enumerate(els):
         if el["type"] == "dialogue" and el["cut"] and not _has_picture(doc, el["cut"]["clip"]):
             if not el.get("cover"):
-                el["cover"] = _cover_for(doc, scene, el["cut"]["out"] - el["cut"]["in"])
+                el["cover"] = _cover_for(doc, scene, el["cut"]["out"] - el["cut"]["in"]) or \
+                    _broll_pick(doc, el, el["cut"]["out"] - el["cut"]["in"])
         if el["type"] != "action" or el.get("cut_locked"):
             continue
         prev = next((e for e in reversed(els[:k]) if e["type"] == "dialogue" and e["cut"]), None)
@@ -291,6 +296,62 @@ def _fill_cuts(doc, scene):
             length = min(length, max(0.5, choice["out"] - choice["in"]))
             el["cut"] = {"clip": choice["clip"], "in": choice["in"],
                          "out": round(choice["in"] + length, 3), "from": "cover"}
+        elif not el.get("takes") and el.get("text") and (
+                any(e.get("cut") for e in els if e["type"] == "dialogue")
+                or not any(e["type"] == "dialogue" for e in els)):
+            # (Not in a scene whose lines have no footage at all: nothing of it was shot.)
+            # No footage of the scene's own look (a voice-over ad, an end card): B-roll.
+            words = len(el["text"].split())
+            length = min(ACTION_SECONDS[1], max(ACTION_SECONDS[0], words / 4.0))
+            pick = _broll_pick(doc, el, length)
+            if pick:
+                el["cut"] = dict(pick, **{"from": "cover"})
+
+
+def _broll_pick(doc, el, length):
+    """A picture for a line with none of its own (voice-over, monologue recorded apart, an end
+    card): from the shoot's clips that aren't dialogue takes. In order of preference: not used
+    yet, a different look from the previous shot, the best match for the line's words
+    (MobileCLIP text-to-picture scores, when the picture model ran), long enough for the line.
+    The other candidates are kept in el["cover_options"] for swapping."""
+    takes_clips = {t["clip"] for s in doc["scenes"] for e in s["elements"] if e["type"] == "dialogue"
+                   for t in e.get("takes") or []}
+    pool = [c for c, m in doc["media"].items() if m["kind"] in ("video", "image")
+            and c not in takes_clips]
+    if not pool:
+        return None
+    used, prev_group, seen_self = set(), None, False
+    for s in doc["scenes"]:
+        for e in s["elements"]:
+            if e is el:
+                seen_self = True
+                continue
+            pic = e.get("cover") or (e.get("cut") if (e.get("cut") or {}).get("from") == "cover" else None)
+            if pic and pic.get("clip") in doc["media"]:
+                used.add(pic["clip"])
+                if not seen_self:
+                    prev_group = doc["media"][pic["clip"]].get("group")
+    scores = (doc.get("cover_scores") or {}).get(el["id"], {})
+
+    def rank(c):
+        m = doc["media"][c]
+        long_enough = m["kind"] == "image" or (m.get("duration") or 0) >= length * 0.9
+        return (c in used, prev_group is not None and m.get("group") == prev_group,
+                -scores.get(c, 0.0), not long_enough, c)
+
+    ranked = sorted(pool, key=rank)
+    out = []
+    for c in ranked[:6]:
+        m = doc["media"][c]
+        shots = sorted(m.get("shots") or [{"start": 0.0, "end": m.get("duration") or length}],
+                       key=lambda sh: sh["start"] - sh["end"])
+        start = 0.0 if m["kind"] == "image" else shots[0]["start"]
+        if m["kind"] == "video" and (m.get("duration") or 0) - start < length:
+            start = max(0.0, (m.get("duration") or 0) - length)
+        out.append({"clip": c, "in": round(start, 3), "out": round(start + length, 3), "auto": True,
+                    "match": round(scores.get(c, 0.0), 3) if scores else None})
+    el["cover_options"] = out[1:]
+    return out[0]
 
 
 def _cover_for(doc, scene, length):

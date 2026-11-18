@@ -237,11 +237,15 @@ def test_full(samples, model, lines):
                   len(clips) == n_events and abs(back.duration().to_seconds() - r["duration"]) < 0.1,
                   (len(clips), n_events, back.duration().to_seconds(), r["duration"]))
         tl = export.timeline(doc)
-        first = next(c for c in tl.tracks[0] if isinstance(c, otio.schema.Clip))
-        m = next(m for m in doc["media"].values() if m["name"] == first.name)
-        ev = editing_script.timeline(doc)[0]
+        events = editing_script.timeline(doc)
+        vclips = [c for c in tl.tracks[0] if isinstance(c, otio.schema.Clip)]
+        k = next(i for i, ev in enumerate(events)          # the first event from a timecoded clip
+                 if ev["picture"] and doc["media"][ev["picture"]["clip"]].get("timecode_seconds") is not None)
+        first, ev = vclips[k], events[k]
+        m = doc["media"][ev["picture"]["clip"]]
         check("export: source times are in the clip's own timecode",
-              abs(first.source_range.start_time.to_seconds() - (m["timecode_seconds"] + ev["in"])) < 0.05)
+              abs(first.source_range.start_time.to_seconds() - (m["timecode_seconds"] + ev["picture"]["in"])) < 0.05,
+              (first.name, first.source_range.start_time.to_seconds(), m["timecode_seconds"], ev["picture"]["in"]))
         check_sequence_files(os.path.join(samples, "export"), doc.get("fps") or 24, "dialogue")
         exp = os.path.join(samples, "export")
         edl_first = next(l for l in open(os.path.join(exp, "cut.edl")) if l[:3].isdigit()).split()

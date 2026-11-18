@@ -81,12 +81,20 @@ def assemble(media, script=None, *, model=None, image_backend=None, cache_dir=No
             _log(log, "heard {:s} ({:.1f}s): {:s}".format(
                 clip["name"], time.time() - t0, transcripts[clip["path"]]["text"][:90]))
 
-    visuals, groups = {}, []
+    visuals, groups, cover_scores = {}, [], None
     if visual_grouping:
         visuals, backend = visual.describe_clips(clips, cache_dir, backend=image_backend)
         emb = {p: v["embedding"] for p, v in visuals.items() if "embedding" in v}
         groups = visual.group(emb, visual.THRESHOLD[backend])
         _log(log, "looks ({:s}): {:d} groups".format(backend, len(groups)))
+        if parsed and backend == "mobileclip":
+            # For lines without pictures of their own (voice-over): which B-roll fits the words.
+            texts = {el["id"]: el.get("spoken") or el["text"] for sc in parsed["scenes"]
+                     for el in sc["elements"] if el["type"] in ("dialogue", "action") and el.get("text")}
+            try:
+                cover_scores = visual.text_scores(texts, emb)
+            except Exception as ex:  # the picture model is an extra, never a reason to fail
+                _log(log, "picture matching skipped: {!s}".format(ex))
         for v in visuals.values():
             v.pop("embedding", None)
 
@@ -97,7 +105,8 @@ def assemble(media, script=None, *, model=None, image_backend=None, cache_dir=No
 
     index = match.ScriptIndex(screenplay.dialogue_lines(parsed))
     matches = {p: match.match_take(t["words"], index) for p, t in transcripts.items()}
-    doc = editing_script.build(parsed, clips, transcripts, matches, groups, visuals, sound=synced)
+    doc = editing_script.build(parsed, clips, transcripts, matches, groups, visuals, sound=synced,
+                               cover_scores=cover_scores)
     doc["sources"]["media"] = folder
     doc["settings"] = {"whisper_model": str(model), "image_backend": visual_grouping and backend or None}
     if bad:
