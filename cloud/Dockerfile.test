@@ -6,9 +6,12 @@
 # fake shoot (12x12 pixel video, 16 kHz mono sound, a screenplay PDF, a song) and runs the
 # whole pipeline on it. Build the editor image first, then this, from the repository root:
 #
-#   docker build -f cloud/Dockerfile -t latest-avenue-edit .
-#   docker build -f cloud/Dockerfile.test -t latest-avenue-edit:test .
-#   docker run --rm latest-avenue-edit:test               (add --gpus all to use an NVIDIA card)
+#   docker build -f cloud/Dockerfile -t latest-avenue-edit:candidate .
+#   docker build -f cloud/Dockerfile.test --build-arg BASE=latest-avenue-edit:candidate -t latest-avenue-edit:test .
+#   docker run --rm -v la-edit-test-models:/data/models latest-avenue-edit:test
+#
+# Add --gpus all to docker run to use an NVIDIA card (build the first image with
+# --build-arg ASSEMBLY_CUDA=1 for that). On Windows, cloud/pc/test.ps1 does all of it.
 ARG BASE=latest-avenue-edit
 FROM ${BASE}
 USER root
@@ -19,6 +22,7 @@ COPY tests/vse/test_assembly.py tests/vse/test_assembly_editor.py tests/vse/test
 COPY tests/vse/assembly/make_samples.py /opt/tests/vse/assembly/
 COPY tools/vse_lyrics /opt/tools/vse_lyrics
 COPY cloud/test_container.sh /opt/tests/test_container.sh
-RUN sed -i 's/\r$//' /opt/tests/test_container.sh && chmod +x /opt/tests/test_container.sh
+RUN sed -i 's/\r$//' /opt/tests/test_container.sh && chmod +x /opt/tests/test_container.sh \
+    && mkdir -p /data/models/hf && chown -R editor:editor /data/models
 USER editor
 CMD ["/opt/tests/test_container.sh"]
