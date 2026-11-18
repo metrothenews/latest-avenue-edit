@@ -138,6 +138,33 @@ onnxruntime would remove it (next steps).
 the OpenAI-compatible server already used by the editing assistant (`LLM_BASE_URL`, or
 `VSE_ASSEMBLY_LLM_URL`). Without one, timecode order.
 
+## Measured on Sam's footage: picture grouping
+
+71 clips from Sam's "culture clips collections" (12 per category: cars, people, urban, transit,
+fireworks, misc luxury, spread over its six collections; one over 10 MB skipped), reduced to
+140p. Not committed. "Purity": share of clips whose group is mostly their own category;
+"pair precision/recall": of clip pairs put together, how many share a folder / of pairs that
+share a folder, how many were put together.
+
+| Picture model | Threshold | Groups | Purity | Pair precision | Pair recall |
+|---|---|---|---|---|---|
+| colour signature | 0.80 | 33 | 59% | 19% | 34% |
+| MobileCLIP2-S0 | 0.80 (default) | 41 | 94% | 90% | 21% |
+| MobileCLIP2-S0 | 0.70 | 21 | 85% | 69% | 36% |
+| MobileCLIP2-S0 | 0.60 | 11 | 75% | 50% | 51% |
+
+Nearest neighbour in the same category: MobileCLIP 72%, colour signature 25%.
+
+- The colour signature is no use on real footage beyond "same set-up, same camera": most
+  night shots (fireworks, urban, transit, cars) look alike to it and fall into one group.
+  MobileCLIP must be installed on the PC (the image installs it when the PyTorch index is
+  reachable; `assembly_status` says which is in use).
+- MobileCLIP at the default 0.80 makes small, very pure groups: right for the assembly, where a
+  group should be one set-up (takes of the same shot), not a topic. Categories come out at
+  about 0.60-0.70: fireworks, cars, people and urban each mostly form their own group; transit
+  mixes with urban and fireworks at night.
+- Folders are topics, not set-ups, so "recall" against them is expected to be low at 0.80.
+
 ## GPU
 
 faster-whisper runs on CUDA (float16) when ctranslate2 sees an NVIDIA card, and drops to the
