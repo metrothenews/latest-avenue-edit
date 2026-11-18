@@ -231,6 +231,9 @@ $runArgs = @(
     "-e", "ALLOWED_UIDS=$OwnerUids",
     "-e", "ALLOWED_ORIGINS=$Origins",
     "-e", "VSE_GEOMETRY=$Geometry",
+    # Model downloads through Hugging Face's plain file path (its xet store fails behind
+    # strict proxies). Also set in the image; kept here for images built before that.
+    "-e", "HF_HUB_DISABLE_XET=1",
     # The assistant's model uses the same cores the editor was given.
     "-e", "LLM_THREADS=$Cpus",
     "--cpus", "$Cpus"

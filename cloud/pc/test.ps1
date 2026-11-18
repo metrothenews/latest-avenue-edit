@@ -75,13 +75,13 @@ if (-not $NoBuild) {
 }
 
 Step ("Running the tests" + $(if ($Gpu) { " with the NVIDIA card" } else { " on the processor" }))
-$runArgs = @("run", "--rm", "-v", "la-edit-test-models:/data/models")
+$runArgs = @("run", "--rm", "-e", "HF_HUB_DISABLE_XET=1", "-v", "la-edit-test-models:/data/models")
 if ($Gpu) { $runArgs += @("--gpus", "all") }
 docker @runArgs latest-avenue-edit:test
 $code = $LASTEXITCODE
 if ($Gpu -and $code -eq 125) {
     Write-Host "Docker could not give the container the graphics card; running on the processor instead."
-    docker run --rm -v la-edit-test-models:/data/models latest-avenue-edit:test
+    docker run --rm -e HF_HUB_DISABLE_XET=1 -v la-edit-test-models:/data/models latest-avenue-edit:test
     $code = $LASTEXITCODE
 }
 Write-Host ""

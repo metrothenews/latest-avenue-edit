@@ -51,10 +51,16 @@ The same by hand, on any system with Docker (the Linux build file
 ```powershell
 docker build -f cloud/Dockerfile --build-arg ASSEMBLY_CUDA=1 -t latest-avenue-edit:candidate .
 docker build -f cloud/Dockerfile.test --build-arg BASE=latest-avenue-edit:candidate -t latest-avenue-edit:test .
-docker run --rm --gpus all -v la-edit-test-models:/data/models latest-avenue-edit:test
+docker run --rm --gpus all -e HF_HUB_DISABLE_XET=1 -v la-edit-test-models:/data/models latest-avenue-edit:test
 ```
 
-Without an NVIDIA card: `ASSEMBLY_CUDA=0` and no `--gpus all`. To make a fake shoot to look at:
+Without an NVIDIA card: `ASSEMBLY_CUDA=0` and no `--gpus all`.
+
+Model downloads: the image sets `HF_HUB_DISABLE_XET=1`, so the speech and picture models
+come down through Hugging Face's plain file path. Its newer "xet" download store fails behind
+strict proxies and firewalls (seen in testing); if a model download ever stalls or fails on
+`cas-server.xethub.hf.co`, check that variable is set in the container
+(`docker exec latest-avenue-edit env | findstr HF_HUB`). To make a fake shoot to look at:
 `python tests/vse/assembly/make_samples.py shoot --tiny` (needs ffmpeg and espeak-ng).
 
 ## What runs on the PC

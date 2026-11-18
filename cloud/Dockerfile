@@ -67,6 +67,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
 ENV VSE_ASSEMBLY_PYTHON=/opt/assembly-env/bin/python \
     LD_LIBRARY_PATH=/opt/assembly-env/lib/python3.12/site-packages/nvidia/cublas/lib:/opt/assembly-env/lib/python3.12/site-packages/nvidia/cudnn/lib \
     HF_HOME=/data/models/hf \
+    HF_HUB_DISABLE_XET=1 \
     VSE_ASSEMBLY_LLM_URL=http://127.0.0.1:8793
 
 COPY cloud/start.sh cloud/editor.sh cloud/gateway.py cloud/agent.py tools/vse_mcp/vse_mcp.py /opt/cloud/
