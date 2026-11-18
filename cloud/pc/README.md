@@ -102,7 +102,31 @@ Run on Linux: the image built from the repository root; the container started th
 security test (38 checks) and the restart test against it; the port refused from the
 machine's network address.
 
-**Not run: `install.ps1` and `install_edit_server.cmd` themselves, Docker Desktop on
-Windows, Tailscale Funnel, and a real Google sign-in.** They were written without a Windows
-PC or PowerShell available. Expect to fix something in the script on the first run; the
-container it starts is the tested part.
+Run on Sam's Windows PC (2026-11-17: Windows 11 Pro, i9-12900KF, Docker Desktop 29.9.3 on
+WSL 2, Windows PowerShell 5.1, Tailscale 1.104.7):
+
+- `powershell -ExecutionPolicy Bypass -File cloud\pc\install.ps1 -Cpus 16` ran start to
+  finish with no changes to the script: pulled the code, cloned the `linux-build` branch,
+  joined the two parts (checksum matched), built the image (about a minute), started the
+  container and turned on Funnel. The first run stopped at "Funnel is not enabled on your
+  tailnet" and waited; it carried on by itself once Funnel was added to the tailnet policy
+  (admin console > Access controls > JSON editor > Funnel panel > "Add Funnel to policy";
+  HTTPS certificates must also be on, under DNS). The node link it printed gave
+  "404 node not found" in a browser signed in to another account.
+- On the PC: `http://127.0.0.1:8080/healthz` answers `ok`; `/api/status` without a token
+  is 401; the port listens on 127.0.0.1 only and is refused on the PC's network address and
+  its Tailscale address; the container has `ALLOWED_UIDS` and `ALLOWED_ORIGINS` and no
+  `GATEWAY_CERTS_FILE` or `EDITOR_AUTOSTART`; `pgrep -c blender` in the container is 0.
+- Through `https://desktop-3dmt7vm.tail508d1d.ts.net` (resolved over public DNS):
+  `/healthz` is `ok`; `/api/status` and `/stream` without a token, and `/api/status` with a
+  forged token, are 401; the editor still isn't running afterwards.
+- Security test, 38 of 38, against a second throwaway container on the PC with test
+  certificates (port 8090, removed afterwards). It was run with the PC's Python in a venv
+  (`aiohttp`, `pyjwt`, `cryptography` from pip): the image's own `python3-aiohttp` is too
+  old for the test (`aiohttp.ClientWSTimeout` is missing).
+
+**Not run yet: a real Google sign-in from latestavenue.com/edit** (the site's
+`editServiceUrl` is set on the `claude/edit-stream` branch, not deployed), the editor shown
+and used through the page, a clip in `<DataDir>\media` seen at `/data/media`, work surviving
+`docker restart latest-avenue-edit`, a check of the port from another device on the
+network, and `install_edit_server.cmd` (double-click) itself.
