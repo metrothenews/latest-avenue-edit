@@ -255,7 +255,7 @@ RECORDERS = [
     ("IMG_0042.MOV", "ZOOM0003.WAV", 0.9, False),        # synced by the clap
 ]
 CLAP_TAKES = {"IMG_0042.MOV"}
-WIND = "anoisesrc=color=brown:amplitude=0.3:sample_rate=16000"
+WIND = "anoisesrc=color=brown:amplitude=0.3:sample_rate=16000:seed=42"
 SCRATCH = "highpass=f=300,lowpass=f=3000,volume=0.4"
 
 
@@ -288,7 +288,7 @@ def make_recorder(speech, path, lead, timecode_seconds=None):
     """Clean sound starting `lead` seconds before the camera, with a little room tone."""
     ar = FORMAT["ar"]
     cmd = ["ffmpeg", "-v", "error", "-y", "-i", speech, "-f", "lavfi", "-i",
-           "anoisesrc=color=pink:amplitude=0.004:sample_rate={:d}".format(ar),
+           "anoisesrc=color=pink:amplitude=0.004:sample_rate={:d}:seed=7".format(ar),
            "-filter_complex", "[0:a]aresample={:d},adelay={:d}:all=1,apad=pad_dur=1[s];"
            "[s][1:a]amix=inputs=2:duration=first:normalize=0".format(ar, int(lead * 1000)),
            "-ar", str(ar), "-ac", "1", "-c:a", "pcm_s16le"]

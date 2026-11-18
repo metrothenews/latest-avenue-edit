@@ -131,17 +131,26 @@ def _refine(camera, recorder, coarse, window=0.03):
 
 
 def clap_time(samples, search=20.0):
-    """Time of the sharpest loud transient in the first `search` seconds, or None."""
+    """Time of a clap (slate sticks, hands) in the first `search` seconds, or None.
+
+    A clap is a sudden, very short, very loud burst: it rises sharply, stands well above
+    everything else in the stretch (speech after a pause also rises sharply, but isn't much
+    louder than the rest of the speech), and is gone within about 60 ms.
+    """
     import numpy
     x = samples[:int(search * RAW_RATE)]
     hop = RAW_RATE // 200                               # 5 ms
     n = len(x) // hop
-    if n < 10:
+    if n < 20:
         return None
     rms = numpy.sqrt((x[:n * hop].reshape(n, hop) ** 2).mean(axis=1)) + 1e-6
     rise = numpy.log(rms[1:]) - numpy.log(rms[:-1])
     k = int(numpy.argmax(rise * (rms[1:] / rms.max())))
-    if rise[k] < 1.5 or rms[k + 1] < 0.3 * rms.max():
+    peak_frame = k + 1 + int(numpy.argmax(rms[k + 1:k + 5]))
+    peak = rms[peak_frame]
+    loud_rest = float(numpy.percentile(rms, 95))
+    after = rms[peak_frame + 12:peak_frame + 16]        # 60-80 ms later
+    if rise[k] < 1.5 or peak < 1.5 * loud_rest or (len(after) and after.max() > 0.5 * peak):
         return None
     return (k + 1) * hop / RAW_RATE
 

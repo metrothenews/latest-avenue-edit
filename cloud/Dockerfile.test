@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: 2026 VSE Standalone contributors
+#
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+# Test image: the editor image plus a speech synthesizer and the tests. It generates a tiny
+# fake shoot (12x12 pixel video, 16 kHz mono sound, a screenplay PDF, a song) and runs the
+# whole pipeline on it. Build the editor image first, then this, from the repository root:
+#
+#   docker build -f cloud/Dockerfile -t latest-avenue-edit .
+#   docker build -f cloud/Dockerfile.test -t latest-avenue-edit:test .
+#   docker run --rm latest-avenue-edit:test               (add --gpus all to use an NVIDIA card)
+ARG BASE=latest-avenue-edit
+FROM ${BASE}
+USER root
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      espeak-ng && rm -rf /var/lib/apt/lists/*
+COPY tests/vse/test_assembly.py tests/vse/test_assembly_editor.py tests/vse/test_drive.py \
+     tests/vse/test_vse.py /opt/tests/vse/
+COPY tests/vse/assembly/make_samples.py /opt/tests/vse/assembly/
+COPY tools/vse_lyrics /opt/tools/vse_lyrics
+COPY cloud/test_container.sh /opt/tests/test_container.sh
+RUN sed -i 's/\r$//' /opt/tests/test_container.sh && chmod +x /opt/tests/test_container.sh
+USER editor
+CMD ["/opt/tests/test_container.sh"]

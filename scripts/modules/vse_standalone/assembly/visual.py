@@ -30,7 +30,7 @@ import subprocess
 MODEL = os.environ.get("VSE_ASSEMBLY_IMAGE_MODEL", "MobileCLIP2-S0")
 PRETRAINED = os.environ.get("VSE_ASSEMBLY_IMAGE_WEIGHTS", "dfndr2b")
 # Same-group thresholds (cosine similarity of clip embeddings), per backend.
-THRESHOLD = {"mobileclip": 0.80, "signature": 0.90}
+THRESHOLD = {"mobileclip": 0.80, "signature": 0.80}
 _model = {}
 
 

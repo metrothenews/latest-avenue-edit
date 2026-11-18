@@ -1,0 +1,10 @@
+# Only what cloud/Dockerfile.test copies is sent to the build.
+*
+!tests/vse/test_assembly.py
+!tests/vse/test_assembly_editor.py
+!tests/vse/test_drive.py
+!tests/vse/test_vse.py
+!tests/vse/assembly/make_samples.py
+!cloud/test_container.sh
+!tools/vse_lyrics
+**/__pycache__
