@@ -4,6 +4,7 @@
 !tests/vse/test_assembly_editor.py
 !tests/vse/test_drive.py
 !tests/vse/test_vse.py
+!tests/vse/test_site_flow.py
 !tests/vse/assembly/make_samples.py
 !cloud/test_container.sh
 !tools/vse_lyrics

@@ -69,6 +69,16 @@ until the editor restarts. (`assembly_job` is the older name of `job_status`; bo
 - `json`: the whole document (format in `scripts/modules/vse_standalone/assembly/editing_script.py`),
   including `media[clip].shots[].thumbnail` (JPEG paths for thumbnails) and word timings.
 
+## Tested end to end
+
+`tests/vse/test_site_flow.py` makes these calls over `/api/rpc` exactly as the page would, in
+the order above, against the real gateway and editor (signed in with a test certificate the
+gateway is told to trust). It runs as the last step of the container test
+(`docker run --rm latest-avenue-edit:test`): upload the script PDF in parts, start the
+assembly, poll the job, read the editing script as text and lines, edit the text, swap a take,
+take pictures, nudge a sync, lay it out, render, export all four formats, then a music video
+from an uploaded song and lyric sheet. Use it as the reference for how the page should call.
+
 ## Errors
 
 `error.message` is a sentence for the user ("No editing script at ...", "Line S1-9 has no
