@@ -120,6 +120,11 @@ def _execute(job):
     except Exception as ex:
         traceback.print_exc()
         job.error = {"code": -32603, "message": "{:s}: {:s}".format(type(ex).__name__, str(ex))}
+    try:
+        from . import activity
+        activity.sync()
+    except Exception:
+        pass
     log = _state["log"]
     log.append({"time": started, "method": job.method, "ok": job.error is None,
                 "seconds": round(time.time() - started, 3)})

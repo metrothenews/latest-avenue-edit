@@ -115,7 +115,10 @@ scripts/modules/_bpy_internal/assets/remote_library/*_openapi.py linguist-genera
 # latest avenue video: small own assets are stored in git directly, not in LFS.
 release/vse/** -filter -diff -merge
 release/darwin/Blender.app/Contents/Resources/la.icns -filter -diff -merge
-scripts/modules/vse_standalone/** -filter -diff -merge
+# (Only -filter here: -diff and -merge would make git treat the Python as binary, which hides
+# line changes and makes any two-sided edit a whole-file conflict.)
+scripts/modules/vse_standalone/** -filter
+scripts/modules/vse_standalone/luts/** -filter -diff -merge
 scripts/startup/bl_app_templates_system/Video_Editing/startup.blend -filter -diff -merge
 
 # Files that run inside the Linux container keep Unix line endings on Windows checkouts.

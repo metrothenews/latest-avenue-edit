@@ -39,6 +39,14 @@ How many processor cores the editor may use (default: all but two, at least two)
 .PARAMETER Memory
 Memory limit for the editor, e.g. "8g" (default: no limit beyond Docker's own).
 
+.PARAMETER ModelUrl
+Where the editing assistant's base model (a GGUF file) is downloaded from the first time
+someone chats. Default: Qwen2.5 7B Instruct (about 4.7 GB). It is kept in <DataDir>\models.
+
+.PARAMETER BackupDataset
+Also register a daily Windows task that backs the dataset up to the repository's private
+"dataset" branch (cloud\pc\backup_dataset.ps1). You can run that script by hand instead.
+
 .PARAMETER NoPull
 Do not pull new code first.
 
@@ -63,6 +71,8 @@ param(
     [int]$Cpus = 0,
     [string]$Memory = "",
     [string]$Geometry = "1600x900",
+    [string]$ModelUrl = "",
+    [switch]$BackupDataset,
     [switch]$NoPull,
     [switch]$Uninstall
 )
@@ -197,7 +207,7 @@ Run "Building the image" { docker build -f (Join-Path $Repo "cloud\Dockerfile") 
 Step "Starting the server"
 
 New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
-foreach ($sub in @("projects", "media", "renders")) {
+foreach ($sub in @("projects", "media", "renders", "models\adapters", "dataset")) {
     New-Item -ItemType Directory -Force -Path (Join-Path $DataDir $sub) | Out-Null
 }
 if ($Cpus -le 0) { $Cpus = [math]::Max(2, [Environment]::ProcessorCount - 2) }
@@ -213,9 +223,12 @@ $runArgs = @(
     "-e", "ALLOWED_UIDS=$OwnerUids",
     "-e", "ALLOWED_ORIGINS=$Origins",
     "-e", "VSE_GEOMETRY=$Geometry",
+    # The assistant's model uses the same cores the editor was given.
+    "-e", "LLM_THREADS=$Cpus",
     "--cpus", "$Cpus"
 )
 if ($Memory) { $runArgs += @("--memory", $Memory) }
+if ($ModelUrl) { $runArgs += @("-e", "LLM_MODEL_URL=$ModelUrl") }
 $runArgs += $Image
 Run "Starting the server" { docker @runArgs | Out-Null }
 
@@ -253,6 +266,17 @@ if ($Tunnel -eq "tailscale") {
     }
 }
 
+if ($BackupDataset) {
+    Step "Daily dataset backup"
+    $script = Join-Path $PSScriptRoot "backup_dataset.ps1"
+    $action = New-ScheduledTaskAction -Execute "powershell.exe" `
+        -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$script`" -DataDir `"$DataDir`""
+    $trigger = New-ScheduledTaskTrigger -Daily -At "4:00"
+    Register-ScheduledTask -TaskName "latest avenue edit dataset backup" -Action $action `
+        -Trigger $trigger -Description "Pushes the editor's dataset to the private dataset branch." -Force | Out-Null
+    Write-Host "Registered: every day at 4:00, as you. Run it now with: $script -DataDir `"$DataDir`""
+}
+
 Write-Host ""
 Write-Host "Done." -ForegroundColor White
 if ($address) {
@@ -268,4 +292,7 @@ if ($address) {
 }
 Write-Host "Footage: put it in $DataDir\media (it appears in the editor at /data/media)."
 Write-Host "Renders arrive in $DataDir\renders. To update later, run this again."
+Write-Host "Assistant: the Chat panel on the page. Its model downloads on the first message (about"
+Write-Host "4.7 GB into $DataDir\models); LoRA adapters go in $DataDir\models\adapters."
+Write-Host "Everything asked and done is recorded in $DataDir\dataset."
 Write-Host "The PC has to be on and awake, with Docker Desktop running, for the page to connect."

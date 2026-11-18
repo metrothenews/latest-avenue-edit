@@ -41,6 +41,11 @@ def _deferred_start():
         layout.apply_saved()
     except Exception as ex:
         print("Pane arrangement not applied: {:s}".format(str(ex)))
+    try:
+        from vse_standalone import activity
+        activity.start()
+    except Exception as ex:
+        print("Activity log not started: {:s}".format(str(ex)))
     if os.environ.get("VSE_NO_GAME_VIEW") != "1":
         try:
             from vse_standalone import game_view

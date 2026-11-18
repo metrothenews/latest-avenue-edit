@@ -19,6 +19,11 @@ Endpoints:
 ``GET  /healthz``      liveness for the platform. No information, no auth.
 ``GET  /api/status``   ``Authorization: Bearer <token>``. Editor state.
 ``POST /api/rpc``      ``Authorization: Bearer <token>``. JSON-RPC to the editor's tools.
+``GET  /api/chat/state``   chat and language model state.
+``GET  /api/chat/events``  ``?after=<seq>&wait=<seconds>``: the chat's events (long poll).
+``POST /api/chat/send``    ``{"text": ...}``: a message for the editing agent (cloud/agent.py).
+``POST /api/chat/stop``, ``/api/chat/new``, ``/api/chat/feedback`` (``{"seq", "rating", "note"}``).
+                       All of them need the bearer token, like every other call.
 ``GET  /stream``       WebSocket carrying the VNC (RFB) stream. The token travels in the
                        ``Sec-WebSocket-Protocol`` header as ``auth.<token>`` next to
                        ``binary``, so it never appears in a URL or a request log.
@@ -55,6 +60,9 @@ import aiohttp
 import jwt
 from aiohttp import web
 from cryptography import x509
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from agent import Agent  # noqa: E402
 
 CERTS_URL = "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com"
 
@@ -277,6 +285,76 @@ async def rpc(request):
     return _cors(request, web.json_response(reply))
 
 
+# -----------------------------------------------------------------------------
+# Chat with the editing agent.
+
+async def _chat_auth(request):
+    await _require_bearer(request)
+    _ensure_editor(request.app)
+    return request.app["agent"]
+
+
+async def _json_body(request):
+    body = await request.read()
+    if len(body) > MAX_RPC_BYTES:
+        raise ValueError("too large")
+    data = json.loads(body or b"{}")
+    if not isinstance(data, dict):
+        raise ValueError("expected an object")
+    return data
+
+
+async def chat_state(request):
+    try:
+        agent = await _chat_auth(request)
+    except AuthError as ex:
+        return _deny(request, 401, str(ex))
+    return _cors(request, web.json_response(agent.state()))
+
+
+async def chat_events(request):
+    try:
+        agent = await _chat_auth(request)
+    except AuthError as ex:
+        return _deny(request, 401, str(ex))
+    try:
+        after = int(request.query.get("after", "0"))
+        wait = max(0.0, min(float(request.query.get("wait", "25")), 30.0))
+    except ValueError:
+        return _cors(request, web.json_response({"error": "bad request"}, status=400))
+    events = await agent.wait_events(after, wait)
+    return _cors(request, web.json_response({"events": events, **agent.state()}))
+
+
+async def chat_post(request):
+    try:
+        agent = await _chat_auth(request)
+    except AuthError as ex:
+        return _deny(request, 401, str(ex))
+    action = request.match_info["action"]
+    try:
+        data = await _json_body(request)
+        if action == "send":
+            agent.send(data.get("text", ""))
+        elif action == "stop":
+            agent.stop()
+        elif action == "new":
+            if agent.busy:
+                raise RuntimeError("still working on the last message")
+            agent.new_session()
+        elif action == "feedback":
+            agent.feedback(data["seq"], data["rating"], data.get("note", ""))
+        else:
+            return _cors(request, web.json_response({"error": "not found"}, status=404))
+    except RuntimeError as ex:
+        return _cors(request, web.json_response({"error": str(ex)}, status=409))
+    except (ValueError, KeyError, TypeError) as ex:
+        return _cors(request, web.json_response({"error": "bad request: " + str(ex)[:100]},
+                                                status=400))
+    request.app["state"]["last_activity"] = time.time()
+    return _cors(request, web.json_response({"ok": True, **agent.state()}))
+
+
 async def stream(request):
     """WebSocket <-> VNC TCP relay, after verifying the token."""
     offered = [p.strip() for p in request.headers.get("Sec-WebSocket-Protocol", "").split(",")]
@@ -349,6 +427,9 @@ async def _housekeeping(app):
     while True:
         await asyncio.sleep(15)
         now = time.time()
+        await app["agent"].housekeeping()
+        if app["agent"].busy:
+            app["state"]["last_activity"] = now
         if app["streams"] and now - last_save > AUTOSAVE_SECONDS:
             last_save = now
             await _autosave(app, "periodic")
@@ -362,6 +443,7 @@ async def _housekeeping(app):
 
 async def _on_startup(app):
     app["http"] = aiohttp.ClientSession(trust_env=False)
+    app["agent"] = Agent(app["http"])
     app["housekeeping"] = asyncio.ensure_future(_housekeeping(app))
     if os.environ.get("EDITOR_AUTOSTART") == "1":
         _ensure_editor(app)
@@ -370,6 +452,7 @@ async def _on_startup(app):
 async def _on_cleanup(app):
     app["housekeeping"].cancel()
     # Cloud Run sends SIGTERM before stopping an instance: save first.
+    await app["agent"].close()
     proc = app["state"].get("editor")
     if proc is not None and proc.poll() is None:
         await _autosave(app, "shutdown")
@@ -391,6 +474,9 @@ def make_app():
     app.router.add_get("/api/status", status)
     app.router.add_post("/api/rpc", rpc)
     app.router.add_get("/stream", stream)
+    app.router.add_get("/api/chat/state", chat_state)
+    app.router.add_get("/api/chat/events", chat_events)
+    app.router.add_post("/api/chat/{action}", chat_post)
     app.router.add_route("OPTIONS", "/api/{tail:.*}", options)
     return app
 

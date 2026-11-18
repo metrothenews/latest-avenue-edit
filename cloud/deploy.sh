@@ -64,7 +64,9 @@ else
   rm -rf "$STAGE/linux-build"
 fi
 mkdir -p "$STAGE/cloud" "$STAGE/scripts/modules" "$STAGE/scripts/startup/bl_app_templates_system"
-cp "$REPO/cloud/Dockerfile" "$REPO/cloud/start.sh" "$REPO/cloud/editor.sh" "$REPO/cloud/gateway.py" "$STAGE/cloud/"
+cp "$REPO/cloud/Dockerfile" "$REPO/cloud/start.sh" "$REPO/cloud/editor.sh" "$REPO/cloud/gateway.py" \
+  "$REPO/cloud/agent.py" "$STAGE/cloud/"
+mkdir -p "$STAGE/tools/vse_mcp" && cp "$REPO/tools/vse_mcp/vse_mcp.py" "$STAGE/tools/vse_mcp/"
 cp -R "$REPO/scripts/modules/vse_standalone" "$STAGE/scripts/modules/"
 cp "$REPO/scripts/startup/vse_standalone_startup.py" "$STAGE/scripts/startup/"
 cp -R "$REPO/scripts/startup/bl_app_templates_system/Video_Editing" "$STAGE/scripts/startup/bl_app_templates_system/"

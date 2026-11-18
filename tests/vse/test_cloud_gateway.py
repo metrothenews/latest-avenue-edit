@@ -88,6 +88,20 @@ async def main():
                 body = await r.text()
                 check("rpc refused: " + name, r.status == 401 and "forbidden" in body, body)
 
+        # The chat with the editing agent is behind the same check.
+        bad = token(sub="someone-else")
+        for method, path in (("GET", "/api/chat/state"), ("GET", "/api/chat/events?after=0&wait=0"),
+                             ("POST", "/api/chat/send"), ("POST", "/api/chat/new"),
+                             ("POST", "/api/chat/stop"), ("POST", "/api/chat/feedback")):
+            for name, tok in (("no token", None), ("a different user", bad)):
+                headers = {"Origin": ORIGIN}
+                if tok:
+                    headers["Authorization"] = "Bearer " + tok
+                async with s.request(method, BASE + path, headers=headers,
+                                     json={"text": "delete everything"} if method == "POST" else None) as r:
+                    check("chat refused ({:s}): {:s} {:s}".format(name, method, path.split("?")[0]),
+                          r.status == 401)
+
         # Algorithm confusion: a token "signed" with HMAC must never be accepted.
         hs = jwt.encode({"iss": "https://securetoken.google.com/" + PROJECT, "aud": PROJECT,
                          "sub": "owner123", "iat": now, "exp": now + 3600},
@@ -133,6 +147,14 @@ async def main():
         async with s.post(BASE + "/api/rpc", json={"method": "nope"}, headers=auth) as r:
             data = await r.json()
             check("rpc errors come back", "error" in data, data)
+
+        async with s.get(BASE + "/api/chat/state", headers=auth) as r:
+            data = await r.json()
+            check("chat state for the owner", r.status == 200 and "llm" in data and data["busy"] is False, data)
+        async with s.post(BASE + "/api/chat/send", json={"text": "  "}, headers=auth) as r:
+            check("empty chat message is rejected", r.status == 400)
+        async with s.post(BASE + "/api/chat/feedback", json={"seq": 1, "rating": "maybe"}, headers=auth) as r:
+            check("bad feedback is rejected", r.status == 400)
 
         # A stream ends when its token expires.
         short = token(exp=now + 4)

@@ -393,6 +393,58 @@ def get_strips_at_frame(frame: int) -> list:
 
 
 # -----------------------------------------------------------------------------
+# Finding media.
+
+_MEDIA_KINDS = {
+    "video": {".mp4", ".mov", ".m4v", ".mkv", ".avi", ".webm", ".mxf", ".mts"},
+    "audio": {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aac", ".aif", ".aiff"},
+    "image": {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".exr", ".webp", ".bmp"},
+    "lut": {".cube"},
+    "project": {".blend"},
+    "text": {".txt", ".srt", ".json"},
+}
+
+
+def media_root():
+    """Folder media is looked for in: ``$VSE_DATA/media`` on a server, else the user's home."""
+    data = os.environ.get("VSE_DATA")
+    if data and os.path.isdir(os.path.join(data, "media")):
+        return os.path.join(data, "media")
+    return os.path.expanduser("~")
+
+
+@tool(mutates=False)
+def list_media(folder: str = "", kind: typing.Optional[str] = None, limit: int = 200) -> dict:
+    """List media files available to the editor, with the path to pass to add_movie etc.
+
+    :arg folder: Folder to look in, absolute or relative to the media folder. Default: the media folder.
+    :arg kind: Only this kind: video, audio, image, lut, project or text.
+    :arg limit: Most files to return.
+    """
+    root = media_root()
+    path = folder if os.path.isabs(folder) else os.path.join(root, folder)
+    path = os.path.normpath(path)
+    if not os.path.isdir(path):
+        raise APIError("No such folder: {:s}".format(folder or path))
+    by_ext = {ext: name for name, exts in _MEDIA_KINDS.items() for ext in exts}
+    files, folders = [], []
+    for base, dirs, names in os.walk(path):
+        dirs[:] = sorted(d for d in dirs if not d.startswith("."))
+        if base == path:
+            folders = list(dirs)
+        for name in sorted(names):
+            file_kind = by_ext.get(os.path.splitext(name)[1].lower())
+            if file_kind is None or (kind and file_kind != kind):
+                continue
+            full = os.path.join(base, name)
+            files.append({"path": full, "name": name, "kind": file_kind,
+                          "megabytes": round(os.path.getsize(full) / 1e6, 2)})
+            if len(files) >= limit:
+                return {"folder": path, "folders": folders, "files": files, "truncated": True}
+    return {"folder": path, "folders": folders, "files": files, "truncated": False}
+
+
+# -----------------------------------------------------------------------------
 # Adding media.
 
 def _place(channel, frame_start):

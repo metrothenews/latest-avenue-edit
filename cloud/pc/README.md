@@ -56,6 +56,22 @@ powershell -ExecutionPolicy Bypass -File cloud\pc\install.ps1 -DataDir D:\edit -
 `-Cpus` cores the editor may use (default all but two), `-Memory 8g`, `-Port`, `-Tunnel none`,
 `-OwnerUids`, `-NoPull`, `-Uninstall` (removes the server, keeps your files).
 
+## The assistant and the dataset
+
+The **Chat** panel on the page talks to a language model that runs in the same container on
+this PC and works the editor through its tools: see [../AGENT.md](../AGENT.md). The first
+message downloads the model (about 4.7 GB) into `<DataDir>\models`. LoRA adapters go in
+`<DataDir>\models\adapters`.
+
+Everything asked and done is recorded as text in `<DataDir>\dataset`
+([../DATASET.md](../DATASET.md)). To back it up to the repository's private `dataset` branch:
+
+```
+powershell -ExecutionPolicy Bypass -File cloud\pc\backup_dataset.ps1 -DataDir <DataDir>
+```
+
+or run the installer once with `-BackupDataset` to do that every day at 4:00.
+
 ## Files
 
 Put footage in `<DataDir>\media`; it is at `/data/media` in the editor. Renders written to

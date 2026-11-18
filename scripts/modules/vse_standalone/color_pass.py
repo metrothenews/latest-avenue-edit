@@ -244,6 +244,11 @@ def color_pass_apply(index: int, pass_name: str, slot: int, generation: int = 0)
     luts[pass_name] = mode[pass_name][slot - 1] if slot else None
     _set_pass_luts(strip, luts)
     _state["errors"].pop(strip.name, None)
+    from . import activity
+    activity.write_event({"type": "game_decision", "pass": "color_pass." + pass_name,
+                          "item": strip.name, "choice": slot,
+                          "before": before and _stem(before),
+                          "after": luts[pass_name] and _stem(luts[pass_name])})
     _log({"clip": strip.name, "pass": pass_name, "slot": slot,
           "before": before and _stem(before), "after": luts[pass_name] and _stem(luts[pass_name])})
     return _clip_info(index, strip)
