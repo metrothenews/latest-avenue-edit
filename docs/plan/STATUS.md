@@ -2,7 +2,7 @@
 
 Updated by the documentation worker from the builder's pushed commits (all branches). Last
 checked: 2026-11-18 ~07:30 UTC: `origin/main` at `dcfe4331`; builder at
-`claude/assembly-pipeline` `ff12b07c`; website at latest-avenue `claude/edit-design` `43475e7`
+`claude/assembly-pipeline` `ff12b07c`; website at latest-avenue `claude/edit-design` `7acd32e`
 (reported by the coordinator, not checked from here).
 
 **Deadline:** a working consumer-facing app by noon Eastern today (17:00 UTC).
@@ -60,14 +60,27 @@ Done in the container:
 - Editor tools for the site: `save_upload`, `start_assembly` (with `song` / `lyrics`),
   `set_clip_sync`, `take_thumbnails`; background jobs with job ids and polling.
 
+Model downloads behind strict proxies need `HF_HUB_DISABLE_XET=1` (sent to the builder by
+the coordinator; mentioned in the builder's `doc/vse/assembly_workflow.md`).
+
 Not tested: the GPU path, Windows `cloud/pc/test.ps1` / `install.ps1`, a real Drive token.
 
-### Website (latest-avenue, `claude/edit-design`, merged into `claude/great-johnson-glhijj`)
+### Website (latest-avenue, `claude/edit-design` @`7acd32e`, merged into `claude/great-johnson-glhijj` @`7acd32e`)
 
 A guided `/edit` flow: what are you making → footage → script or song → assembly → review
 (with confidence and sync labels) → sound panel → export to Drive ("latest avenue exports").
 The live sequencer moved to `/edit/sequencer`. The assistant chat is kept but off by
-default. The build passes; a signed-in check on a phone is still to do.
+default. The site is wired to `save_upload`, `start_assembly` (song + lyrics), `set_clip_sync` and
+`take_thumbnails`. Tested at 390 px width against the real editor running natively
+headless, with Drive stubbed, on the old 12×12 media. The build passes; a signed-in check on
+a phone is still to do.
+
+## Repository visibility
+
+The coordinator cloned latest-avenue-edit anonymously over HTTPS (no credentials) at
+06:26 UTC, so the repository is **public**. The README's "private repo" lines are out of
+date. Sam to confirm he wants it public (see OPEN_QUESTIONS.md). Sam's media is never
+committed either way.
 
 ## Next
 

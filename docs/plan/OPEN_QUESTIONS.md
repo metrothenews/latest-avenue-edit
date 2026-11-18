@@ -17,7 +17,8 @@ behind a setting, off by default: a guess Sam may overrule, see DECISIONS.md).
    llama.cpp). Keep that?
 6. **A "right answer" cut.** Your test material has footage and scripts. Is there a finished
    edit of any of it to score the assembly against?
-7. **Is the repository public?** The coordinating session says it is; the README says it is
-   private. Either way, your media is not committed.
+7. **Should the repository be public?** It is public now (cloned anonymously at 06:26 UTC);
+   the README still says private. Keep it public or make it private? Either way, your media
+   is not committed.
 8. **Two Drive integrations?** Should the editor's existing Drive import/export elsewhere be
    reconciled with the builder's `assembly/drive.py`?
