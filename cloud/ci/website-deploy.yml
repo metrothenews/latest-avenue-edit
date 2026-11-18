@@ -1,0 +1,41 @@
+# For the WEBSITE repository (latest-avenue), not this one: copy to
+#   .github/workflows/deploy.yml
+# there. On every push to main: npm ci, npm run build, deploy to Firebase Hosting (live).
+# One-time secret setup: cloud/pc/SERVER.md, "The website's deploys".
+
+name: Deploy website
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firebase-hosting-live
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Deploy to Firebase Hosting
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_LATEST_AVENUE_APP }}
+          projectId: latest-avenue-app
+          channelId: live

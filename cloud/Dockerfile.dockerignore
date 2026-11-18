@@ -7,6 +7,10 @@
 !cloud/agent.py
 !cloud/worker.py
 !cloud/heartbeat.py
+!cloud/updater.py
+!cloud/pc/compose.yaml
+!cloud/pc/compose.gpu.yaml
+!cloud/pc/env.example
 !tools/vse_mcp/vse_mcp.py
 !tools/vse_assembly/requirements.txt
 !tools/vse_assembly/requirements-image.txt

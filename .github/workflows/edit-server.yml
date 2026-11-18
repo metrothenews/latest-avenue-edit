@@ -1,0 +1,92 @@
+# SPDX-FileCopyrightText: 2026 VSE Standalone contributors
+#
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+# The edit server's release line (cloud/pc/SERVER.md, "How releases work"):
+# push to main -> container tests -> image -> ghcr.io/<repo>:sha-<commit> and :main -> if the
+# tests passed, :stable moves to it. The PC's updater pulls :stable and rolls itself onto it.
+# Pull requests run the tests only. Rolling back = the "Promote" workflow with an older tag.
+#
+# Repository variable AUTO_PROMOTE=false stops :stable moving by itself (then promote by hand).
+
+name: Edit server
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: edit-server-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+  RELEASE_FILE: latest-avenue-video-linux-x64.tar.xz
+
+jobs:
+  build-test-publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+
+      - name: Make room (the images and their tests need about 20 GB)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: The editor's Linux build (linux-build branch, two parts)
+        run: |
+          git fetch --no-tags --depth 1 origin linux-build
+          for part in $(git ls-tree --name-only FETCH_HEAD | grep "^$RELEASE_FILE.part" | sort); do
+            git show "FETCH_HEAD:$part" >> "$RELEASE_FILE"
+          done
+          git show FETCH_HEAD:SHA256SUMS | sha256sum -c -
+
+      - name: Version
+        id: v
+        run: echo "version=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - name: Build the image
+        run: |
+          docker build -f cloud/Dockerfile --build-arg VSE_VERSION=${{ steps.v.outputs.version }} \
+            -t latest-avenue-edit:candidate .
+          docker build -f cloud/Dockerfile.test --build-arg BASE=latest-avenue-edit:candidate \
+            -t latest-avenue-edit:test .
+
+      - name: Speech model cache
+        uses: actions/cache@v4
+        with:
+          path: ~/models
+          key: speech-models-base-en-v1
+
+      - name: Container tests (the whole pipeline on a generated 124x70 shoot)
+        run: |
+          mkdir -p ~/models/hf && chmod -R a+rwX ~/models
+          docker run --rm -v ~/models:/data/models latest-avenue-edit:test
+
+      - name: Stack tests (gateway, worker, queue, storage, heartbeat, admin API, updates and rollbacks)
+        run: cloud/test_stack.sh latest-avenue-edit:candidate latest-avenue-edit:test
+
+      - name: Publish
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          for tag in sha-${{ steps.v.outputs.version }} main; do
+            docker tag latest-avenue-edit:candidate "$IMAGE:$tag"
+            docker push "$IMAGE:$tag"
+          done
+
+      - name: Release (move :stable; the PC picks it up within minutes)
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.AUTO_PROMOTE != 'false'
+        run: |
+          docker buildx imagetools create -t "$IMAGE:stable" "$IMAGE:sha-${{ steps.v.outputs.version }}"
+          echo "Released sha-${{ steps.v.outputs.version }} as :stable" >> "$GITHUB_STEP_SUMMARY"

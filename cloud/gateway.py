@@ -27,6 +27,8 @@ Endpoints:
 ``POST /api/chat/send``    ``{"text": ...}``: a message for the editing agent (cloud/agent.py).
 ``POST /api/chat/stop``, ``/api/chat/new``, ``/api/chat/feedback`` (``{"seq", "rating", "note"}``).
                        All of them need the bearer token, like every other call.
+``GET  /api/admin/…``  owner only: the PC's services, logs, restart, drain, update, rollback
+                       (``admin`` below; compose stack only).
 ``GET  /stream``       WebSocket carrying the VNC (RFB) stream. The token travels in the
                        ``Sec-WebSocket-Protocol`` header as ``auth.<token>`` next to
                        ``binary``, so it never appears in a URL or a request log.
@@ -46,7 +48,8 @@ Environment:
 ``EDITOR_AUTOSTART``         ``1`` starts the editor with the gateway instead of on the
                              first signed-in request.
 ``VSE_VERSION``              the version shown by ``/status``.
-``VSE_WORKER_URL``, ``WORKER_KEY``  the job worker (compose); ``/status`` reads its queue.
+``VSE_WORKER_URL``, ``VSE_UPDATER_URL``, ``WORKER_KEY``  the job worker and the updater
+                             (compose); ``/status`` and ``/api/admin`` read them.
 ``GATEWAY_CERTS_FILE``       tests only: JSON file of signing certificates to trust instead
                              of fetching Google's.
 """
@@ -254,24 +257,89 @@ def _version():
         return "dev"
 
 
+async def _internal(app, base_env, method, path, body=None, timeout=5):
+    """A call to the worker or the updater on the compose network. -> (status, json) or None."""
+    base, key = os.environ.get(base_env), os.environ.get("WORKER_KEY")
+    if not base or not key:
+        return None
+    try:
+        async with app["http"].request(method, base.rstrip("/") + path, json=body,
+                                       headers={"X-Worker-Key": key},
+                                       timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
+            return resp.status, await resp.json(content_type=None)
+    except Exception as ex:
+        return 502, {"error": "{:s} is not reachable ({:s})".format(base_env, type(ex).__name__)}
+
+
 async def public_status(request):
-    queue = None
-    url, key = os.environ.get("VSE_WORKER_URL"), os.environ.get("WORKER_KEY")
-    if url and key:
-        try:
-            async with request.app["http"].get(url.rstrip("/") + "/status", headers={"X-Worker-Key": key},
-                                               timeout=aiohttp.ClientTimeout(total=3)) as resp:
-                queue = (await resp.json())["queue_depth"] if resp.status == 200 else None
-        except Exception:
-            queue = None
+    worker = await _internal(request.app, "VSE_WORKER_URL", "GET", "/status", timeout=3)
+    updater = await _internal(request.app, "VSE_UPDATER_URL", "GET", "/overview", timeout=3)
+    queue = worker[1].get("queue_depth") if worker and worker[0] == 200 else None
+    health, update = "ok", None
+    if worker and queue is None:
+        health = "degraded"
+    if updater and updater[0] == 200:
+        services = updater[1].get("services") or []
+        if any(s["state"] != "running" or s["health"] not in ("healthy", "none") for s in services
+               if s["service"] != "gateway"):
+            health = "degraded"
+        update = (updater[1].get("update") or {}).get("state")
     busy = 1 if request.app["streams"] else 0
-    resp = web.json_response({"online": True, "version": _version(),
-                              "queue_depth": queue if queue is not None else 0,
-                              "worker": queue is not None if url else None,
+    resp = web.json_response({"online": True, "version": _version(), "health": health,
+                              "queue_depth": queue or 0,
+                              "worker": (queue is not None) if worker else None,
+                              "update": update,
                               "sessions_free": max(0, 1 - busy)},
                              headers={"Cache-Control": "no-store"})
     resp.headers["Access-Control-Allow-Origin"] = "*"
     return resp
+
+
+ADMIN_ACTIONS = {
+    # action: (service env, method, path)
+    "restart": ("VSE_UPDATER_URL", "POST", "/restart"),
+    "update": ("VSE_UPDATER_URL", "POST", "/update"),
+    "rollback": ("VSE_UPDATER_URL", "POST", "/rollback"),
+    "drain": ("VSE_WORKER_URL", "POST", "/drain"),
+    "undrain": ("VSE_WORKER_URL", "POST", "/undrain"),
+    "backup": ("VSE_WORKER_URL", "POST", "/backup"),
+}
+
+
+async def admin(request):
+    """Owner only (the same sign-in check as /api/rpc): see and steer the PC from anywhere.
+
+    GET  /api/admin/overview          services, versions, health, update state, the job queue
+    GET  /api/admin/logs?service=worker&lines=200
+    POST /api/admin/restart {"service": "worker"}   (the worker is drained first)
+    POST /api/admin/update | rollback | drain | undrain | backup
+    """
+    try:
+        await _require_bearer(request)
+    except AuthError as ex:
+        return _deny(request, 401, str(ex))
+    action, app = request.match_info["action"], request.app
+    if request.method == "GET" and action == "overview":
+        updater = await _internal(app, "VSE_UPDATER_URL", "GET", "/overview")
+        worker = await _internal(app, "VSE_WORKER_URL", "GET", "/status")
+        return _cors(request, web.json_response({
+            "version": _version(), "viewers": len(app["streams"]),
+            "stack": updater[1] if updater else None, "queue": worker[1] if worker else None}))
+    if request.method == "GET" and action == "logs":
+        q = "?service={:s}&lines={:s}".format(request.query.get("service", ""), request.query.get("lines", "200"))
+        reply = await _internal(app, "VSE_UPDATER_URL", "GET", "/logs" + q, timeout=40)
+    elif request.method == "POST" and action in ADMIN_ACTIONS:
+        env, method, path = ADMIN_ACTIONS[action]
+        try:
+            body = await request.json() if request.can_read_body else {}
+        except ValueError:
+            body = {}
+        reply = await _internal(app, env, method, path, body=body, timeout=1900 if action == "restart" else 60)
+    else:
+        return _cors(request, web.json_response({"error": "no such admin call"}, status=404))
+    if reply is None:
+        return _cors(request, web.json_response({"error": "not available on this server"}, status=501))
+    return _cors(request, web.json_response(reply[1], status=reply[0]))
 
 
 async def options(request):
@@ -514,6 +582,8 @@ def make_app():
     app.router.add_get("/api/chat/state", chat_state)
     app.router.add_get("/api/chat/events", chat_events)
     app.router.add_post("/api/chat/{action}", chat_post)
+    app.router.add_get("/api/admin/{action}", admin)
+    app.router.add_post("/api/admin/{action}", admin)
     app.router.add_route("OPTIONS", "/api/{tail:.*}", options)
     return app
 

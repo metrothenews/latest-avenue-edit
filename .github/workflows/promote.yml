@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: 2026 VSE Standalone contributors
+#
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+# Move :stable to any image CI published (a release, or a rollback to an older one). The PC's
+# updater follows within minutes. Tags are sha-<first 12 characters of the commit>; they are
+# listed on the repository's package page (Packages > latest-avenue-edit).
+
+name: Promote
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag to release, e.g. sha-1a2b3c4d5e6f"
+        required: true
+
+permissions:
+  packages: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Move :stable
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          case "$TAG" in sha-[0-9a-f]*|main) ;; *) echo "not a CI tag: $TAG"; exit 1;; esac
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker buildx imagetools inspect "$IMAGE:$TAG" > /dev/null
+          docker buildx imagetools create -t "$IMAGE:stable" "$IMAGE:$TAG"
+          echo "Released $TAG as :stable" >> "$GITHUB_STEP_SUMMARY"

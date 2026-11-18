@@ -20,7 +20,9 @@ editor; started with ``python worker.py`` in the assembly environment.
   ``GET  /jobs/<id>``            the job record, with the last log lines
   ``POST /imports/<op>``         the import queue: start, status, pause, resume, edit, cancel,
                                  remove_media, imported
-  ``GET  /status``               {queue_depth, running, done, failed, pool}
+  ``GET  /status``               {queue_depth, running, done, failed, pool, draining}
+  ``POST /drain``, ``/undrain``   stop / resume taking jobs from the queue (before an update:
+                                 the updater drains, waits for ``running`` to reach 0, restarts)
   ``GET  /healthz``              ok (no key; for the health check)
 
 * Storage: after a job, its outputs (and each imported file) are copied to S3-compatible
@@ -140,6 +142,10 @@ def _run(job_id):
 
 def _loop():
     while True:
+        if r.get("worker:drain"):
+            _wake.wait(2)
+            _wake.clear()
+            continue
         jid = r.lmove("queue:jobs", "queue:running", "LEFT", "RIGHT")
         if not jid:
             _wake.wait(2)
@@ -179,7 +185,8 @@ def status():
     imp_running = sum(1 for j in imports.jobs() if j.state == "running")
     return {"queue_depth": r.llen("queue:jobs") + imp_running, "running": r.llen("queue:running"),
             "done": states.get("done", 0), "failed": states.get("failed", 0),
-            "needs_token": states.get("needs_token", 0), "imports_running": imp_running, "pool": POOL}
+            "needs_token": states.get("needs_token", 0), "imports_running": imp_running, "pool": POOL,
+            "draining": bool(r.get("worker:drain"))}
 
 
 # -----------------------------------------------------------------------------
@@ -303,6 +310,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._reply(200, _imports(self.path[9:], body))
             if self.path == "/backup":
                 return self._reply(200, {"key": backup_now()})
+            if self.path == "/drain":
+                r.set("worker:drain", "1")
+                return self._reply(200, status())
+            if self.path == "/undrain":
+                r.delete("worker:drain")
+                _wake.set()
+                return self._reply(200, status())
         except (ValueError, KeyError) as ex:
             return self._reply(400, {"error": str(ex.args[0]) if ex.args else type(ex).__name__})
         except Exception as ex:
@@ -332,6 +346,7 @@ def main():
                 break
             except s3.S3Error:
                 time.sleep(2)
+    r.delete("worker:drain")            # a fresh worker takes jobs again
     _recover()
     imports.jobs()                      # import queues saved before a restart come back paused
     for _ in range(CONCURRENCY):

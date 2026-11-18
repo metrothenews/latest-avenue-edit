@@ -71,14 +71,31 @@ ENV VSE_ASSEMBLY_PYTHON=/opt/assembly-env/bin/python \
     HF_HUB_DISABLE_XET=1 \
     VSE_ASSEMBLY_LLM_URL=http://127.0.0.1:8793
 
+# The Docker command line and its compose plugin, for the updater service only (it drives the
+# PC's Docker through its socket; no Docker daemon is in the image).
+ARG DOCKER_CLI_VERSION=29.9.3
+ARG COMPOSE_VERSION=v5.7.1
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl \
+    && curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_CLI_VERSION}.tgz" \
+       | tar -xz -C /usr/local/bin --strip-components=1 docker/docker \
+    && mkdir -p /usr/local/lib/docker/cli-plugins \
+    && curl -fsSL -o /usr/local/lib/docker/cli-plugins/docker-compose \
+       "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-x86_64" \
+    && chmod +x /usr/local/lib/docker/cli-plugins/docker-compose \
+    && apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+
 COPY cloud/start.sh cloud/editor.sh cloud/gateway.py cloud/agent.py cloud/worker.py cloud/heartbeat.py \
-     tools/vse_mcp/vse_mcp.py /opt/cloud/
+     cloud/updater.py tools/vse_mcp/vse_mcp.py /opt/cloud/
+# The PC's stack files travel inside the image: the updater takes them out (cloud/updater.py).
+COPY cloud/pc/compose.yaml cloud/pc/compose.gpu.yaml cloud/pc/env.example /opt/cloud/pc/
 COPY --from=llama /build/bin/llama-server /usr/local/bin/llama-server
 
 # The job worker (cloud/pc/compose.yaml) runs from this same image:
 #   /opt/assembly-env/bin/python /opt/cloud/worker.py   (PYTHONPATH=/opt/vse-modules)
 # VSE_VERSION (e.g. the git commit) is what the public /status and the heartbeat report.
 ARG VSE_VERSION=dev
+LABEL org.opencontainers.image.version=$VSE_VERSION \
+      org.opencontainers.image.source=https://github.com/metrothenews/latest-avenue-edit
 
 # Not root: the editor and gateway run as an ordinary user. The sed strips Windows line
 # endings in case the repository was checked out with them.

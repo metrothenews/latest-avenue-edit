@@ -3,37 +3,34 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 <#
-The edit server as a Docker Compose stack (compose.yaml): gateway + editor, job worker, job
-queue (Redis), storage (SeaweedFS), Firestore heartbeat and the Cloudflare Tunnel. See SERVER.md.
+The one-time setup of the edit server stack (SERVER.md), and a few local checks. After the
+setup nothing has to be run on the PC: releases arrive through the updater service.
 
-  powershell -ExecutionPolicy Bypass -File cloud\pc\server.ps1 -Init      # make .env (secrets generated)
-  powershell -ExecutionPolicy Bypass -File cloud\pc\server.ps1            # start / update it
-  powershell -ExecutionPolicy Bypass -File cloud\pc\server.ps1 -Install   # start at sign-in, no sleep
-  powershell -ExecutionPolicy Bypass -File cloud\pc\server.ps1 -Status
-  powershell -ExecutionPolicy Bypass -File cloud\pc\server.ps1 -Down      # stop it (data kept)
+  powershell -ExecutionPolicy Bypass -File server.ps1 -Init [-HeartbeatKey key.json]   # make .env
+  powershell -ExecutionPolicy Bypass -File server.ps1                                  # start it
+  powershell -ExecutionPolicy Bypass -File server.ps1 -ImportData C:\Users\you\latest-avenue-edit-data
+  powershell -ExecutionPolicy Bypass -File server.ps1 -Install    # never sleep; Docker at sign-in
+  powershell -ExecutionPolicy Bypass -File server.ps1 -Status
+  powershell -ExecutionPolicy Bypass -File server.ps1 -Down       # stop it (data kept)
 
--Gpu gives the worker the NVIDIA card (the image must be built with ASSEMBLY_CUDA=1, which
-install.ps1 does when it finds one). -NoTunnel starts everything but cloudflared.
--Wait is how the sign-in task calls it: wait up to 10 minutes for Docker Desktop first.
+Run it from the folder that holds .env (the checkout's cloud\pc, or any folder you copy
+server.ps1 and env.example into). Starting takes the stack's files (compose.yaml, ...) out
+of the released image into this folder, so they are always the released ones.
 #>
 
 param(
     [switch]$Init,
+    [string]$HeartbeatKey = "",
+    [string]$ImportData = "",
     [switch]$Install,
-    [switch]$Uninstall,
     [switch]$Status,
-    [switch]$Down,
-    [switch]$Gpu,
-    [switch]$NoTunnel,
-    [switch]$Wait,
-    [string]$DataDir = "$env:USERPROFILE\latest-avenue-edit-data"
+    [switch]$Down
 )
 
 $ErrorActionPreference = "Stop"
 $Here = $PSScriptRoot
 $EnvFile = Join-Path $Here ".env"
-$TaskName = "latest avenue edit server"
-$Log = Join-Path $env:LOCALAPPDATA "latest-avenue-server.log"
+$Project = "latest-avenue"
 
 function Step($text) { Write-Host ""; Write-Host "== $text" -ForegroundColor White }
 function Fail($text) { Write-Host ""; Write-Host "Stopped: $text" -ForegroundColor Red; exit 1 }
@@ -51,122 +48,126 @@ function ReadEnv() {
     }
     return $values
 }
+function SetEnv($text, $key, $value) {
+    if ($text -match "(?m)^$key=") { return ($text -replace "(?m)^$key=.*$", "$key=$value") }
+    return ($text.TrimEnd() + "`r`n$key=$value`r`n")
+}
 function Compose() {
     $files = @("-f", (Join-Path $Here "compose.yaml"))
-    $useGpu = $Gpu -or ((ReadEnv)["USE_GPU"] -eq "1")
-    if ($useGpu) { $files += @("-f", (Join-Path $Here "compose.gpu.yaml")) }
-    $prof = if ($NoTunnel) { @() } else { @("--profile", "tunnel") }
-    return @("compose", "--project-directory", $Here, "--env-file", $EnvFile) + $files + $prof
+    if ((ReadEnv)["USE_GPU"] -eq "1") { $files += @("-f", (Join-Path $Here "compose.gpu.yaml")) }
+    return @("compose", "-p", $Project, "--project-directory", $Here, "--env-file", $EnvFile) + $files
+}
+function NeedDocker() {
+    Quiet { docker info }
+    if ($LASTEXITCODE -ne 0) { Fail "Docker Desktop is not running. Start it, wait until it says it is running, then run this again." }
 }
 
 # ---------------------------------------------------------------------------
 if ($Init) {
     Step "Making $EnvFile"
-    if (Test-Path $EnvFile) { Fail ".env already exists; edit it instead (or delete it to start over)." }
-    $text = Get-Content (Join-Path $Here "env.example") -Raw
-    $set = @{
+    $text = if (Test-Path $EnvFile) { Get-Content $EnvFile -Raw } else { Get-Content (Join-Path $Here "env.example") -Raw }
+    $values = if (Test-Path $EnvFile) { ReadEnv } else { @{} }
+    $defaults = [ordered]@{
         "FIREBASE_PROJECT_ID" = "latest-avenue-app";
         "ALLOWED_UIDS" = "cUUEuJ7NRCZVuMNhSxOr7yzA8DX2";
         "ALLOWED_ORIGINS" = "https://latestavenue.com,https://www.latestavenue.com,https://latest-avenue-app.web.app";
-        "WORKER_KEY" = (Secret); "S3_ACCESS_KEY" = (Secret).Substring(0, 20); "S3_SECRET_KEY" = (Secret);
-        "DATA_DIR" = ($DataDir -replace '\\', '/')
+        "WORKER_KEY" = (Secret); "S3_ACCESS_KEY" = (Secret).Substring(0, 20); "S3_SECRET_KEY" = (Secret)
     }
-    foreach ($k in $set.Keys) { $text = $text -replace "(?m)^$k=.*$", "$k=$($set[$k])" }
-    if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) { $text += "`r`nUSE_GPU=1`r`n" }
+    foreach ($k in $defaults.Keys) { if (-not $values[$k]) { $text = SetEnv $text $k $defaults[$k] } }
+    if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) { $text = SetEnv $text "USE_GPU" "1" }
+    if ($HeartbeatKey) {
+        if (-not (Test-Path $HeartbeatKey)) { Fail "$HeartbeatKey does not exist." }
+        $b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Resolve-Path $HeartbeatKey)))
+        $text = SetEnv $text "HEARTBEAT_SA_B64" $b64
+        Write-Host "The heartbeat key is in .env now: delete $HeartbeatKey."
+    }
     [IO.File]::WriteAllText($EnvFile, $text)
-    New-Item -ItemType Directory -Force -Path (Join-Path $Here "secrets") | Out-Null
-    Write-Host "Done. Open $EnvFile and paste the Cloudflare tunnel token after TUNNEL_TOKEN= (SERVER.md, step 2)."
-    Write-Host "The random keys in it are already filled in. Never commit or share this file."
+    $missing = @("TUNNEL_TOKEN", "GHCR_USER", "GHCR_TOKEN") | Where-Object { -not (ReadEnv)[$_] }
+    if ($missing) { Write-Host "Still to fill in (open it with: notepad `"$EnvFile`"): $($missing -join ', ')" }
+    Write-Host "The random keys are filled in. Never commit, send or paste this file anywhere."
     exit 0
 }
 
-if (-not (Test-Path $EnvFile)) { Fail "no .env yet: run this with -Init first (SERVER.md)." }
+if (-not (Test-Path $EnvFile)) { Fail "no .env here yet: run this with -Init first (SERVER.md)." }
 
 if ($Install) {
-    Step "Starting the server at sign-in"
-    $script = $MyInvocation.MyCommand.Path
-    $action = New-ScheduledTaskAction -Execute "powershell.exe" `
-        -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$script`" -Wait"
-    $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
-        -ExecutionTimeLimit (New-TimeSpan -Minutes 30) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 5)
-    Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings `
-        -Description "Starts the latest avenue edit server (docker compose) once Docker Desktop is up." -Force | Out-Null
-    Write-Host "Registered '$TaskName' (at sign-in, as $env:USERNAME). Log: $Log"
-
-    # Docker Desktop itself starts at sign-in (Settings > General > Start Docker Desktop when you sign in).
+    Step "Docker Desktop at sign-in"
     foreach ($f in @("$env:APPDATA\Docker\settings-store.json", "$env:APPDATA\Docker\settings.json")) {
         if (Test-Path $f) {
             $json = Get-Content $f -Raw | ConvertFrom-Json
             $key = if ($f -like "*settings-store.json") { "AutoStart" } else { "autoStart" }
             $json | Add-Member -NotePropertyName $key -NotePropertyValue $true -Force
             [IO.File]::WriteAllText($f, ($json | ConvertTo-Json -Depth 20))
-            Write-Host "Docker Desktop: start at sign-in turned on ($f)."
+            Write-Host "Turned on ($f). The stack itself starts with Docker (restart: unless-stopped)."
             break
         }
     }
-
     Step "Power: never sleep when plugged in"
     powercfg /change standby-timeout-ac 0
     powercfg /change hibernate-timeout-ac 0
-    Write-Host "Done: the PC no longer sleeps or hibernates on mains power (the screen can still turn off)."
+    Write-Host "The PC no longer sleeps or hibernates on mains power (the screen can still turn off)."
     Write-Host "Undo with: powercfg /change standby-timeout-ac 30"
     exit 0
 }
 
-if ($Uninstall) {
-    Quiet { Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false }
-    Write-Host "The sign-in task is removed. The stack keeps running until: server.ps1 -Down"
-    exit 0
-}
+NeedDocker
+$values = ReadEnv
+$image = if ($values["EDIT_IMAGE"]) { $values["EDIT_IMAGE"] } else { "ghcr.io/metrothenews/latest-avenue-edit:stable" }
 
-# ---------------------------------------------------------------------------
-if ($Wait) {
-    Start-Transcript -Path $Log -Append | Out-Null
-    $ready = $false
-    foreach ($try in 1..120) {
-        Quiet { docker info }
-        if ($LASTEXITCODE -eq 0) { $ready = $true; break }
-        Start-Sleep -Seconds 5
-    }
-    if (-not $ready) { Fail "Docker Desktop did not start within 10 minutes." }
-}
-
-Quiet { docker info }
-if ($LASTEXITCODE -ne 0) { Fail "Docker Desktop is not running. Start it, wait until it says it is running, then run this again." }
-$dc = Compose
-
-if ($Down) {
-    docker @dc down
-    Write-Host "Stopped. Data, queue and storage are kept (volumes and $((ReadEnv)['DATA_DIR']))."
-    exit 0
-}
-
+if ($Down) { $dc = Compose; docker @dc down; Write-Host "Stopped. Data, queue and storage are kept (Docker volumes)."; exit 0 }
 if ($Status) {
-    docker @dc ps
+    $dc = Compose; docker @dc ps
     try { (Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 "http://127.0.0.1:8080/status").Content } catch { Write-Host "gateway: not answering" }
     exit 0
 }
 
+if ($ImportData) {
+    Step "Copying $ImportData into the stack's data volume"
+    if (-not (Test-Path $ImportData)) { Fail "$ImportData does not exist." }
+    $dc = Compose
+    docker @dc stop gateway worker
+    docker run --rm -u root -v "${ImportData}:/src:ro" -v "${Project}_edit-data:/dst" $image `
+        sh -c "cp -a /src/. /dst/ && chown -R 1001:1001 /dst"
+    if ($LASTEXITCODE -ne 0) { Fail "the copy failed (exit code $LASTEXITCODE)." }
+    docker @dc start worker gateway
+    Write-Host "Copied. The folder itself is left as it was; delete it once everything looks right."
+    exit 0
+}
+
+# ---------------------------------------------------------------------------
+Step "Signing in to the image registry"
+foreach ($k in @("GHCR_USER", "GHCR_TOKEN", "TUNNEL_TOKEN")) {
+    if (-not $values[$k]) { Fail "$k is empty in .env (SERVER.md, steps 2-3)." }
+}
+$values["GHCR_TOKEN"] | docker login ghcr.io -u $values["GHCR_USER"] --password-stdin
+if ($LASTEXITCODE -ne 0) { Fail "the registry refused the token. Check GHCR_USER and GHCR_TOKEN (read:packages)." }
+
+Step "Getting the released image"
+docker pull $image
+if ($LASTEXITCODE -ne 0) { Fail "could not pull $image." }
+$cid = (docker create $image true)
+foreach ($f in @("compose.yaml", "compose.gpu.yaml", "env.example")) {
+    docker cp "${cid}:/opt/cloud/pc/$f" (Join-Path $Here $f) | Out-Null
+}
+docker rm -f $cid | Out-Null
+Write-Host "Version: $(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' $image)"
+
 Step "Starting the stack"
-# The single-container editor (install.ps1) uses the same port: it has to go first (SERVER.md, step 4).
 $old = (docker ps -a --filter "name=^/latest-avenue-edit$" --format "{{.Names}}")
-if ($old) { Fail "the old single container 'latest-avenue-edit' is still there. Follow SERVER.md step 4 (it keeps it for rollback)." }
-$values = ReadEnv
-if (-not $values["TUNNEL_TOKEN"] -and -not $NoTunnel) { Fail "TUNNEL_TOKEN is empty in .env (SERVER.md, step 2), or run with -NoTunnel." }
-if ($values["DATA_DIR"]) { New-Item -ItemType Directory -Force -Path $values["DATA_DIR"] | Out-Null }
-docker @dc up -d --remove-orphans
+if ($old) { Fail "the old single container 'latest-avenue-edit' is still there. Follow SERVER.md step 5 (it keeps it for rollback)." }
+$dc = Compose
+docker @dc up -d
 if ($LASTEXITCODE -ne 0) { Fail "docker compose up failed (exit code $LASTEXITCODE). The messages above say why." }
 
 $ok = $false
-foreach ($try in 1..60) {
+foreach ($try in 1..90) {
     try {
         $reply = Invoke-WebRequest -UseBasicParsing -TimeoutSec 3 "http://127.0.0.1:8080/status"
         if ($reply.StatusCode -eq 200) { $ok = $true; break }
     } catch { Start-Sleep -Seconds 2 }
 }
 docker @dc ps
-if (-not $ok) { Fail "the gateway did not answer on 127.0.0.1:8080. See: docker compose logs gateway worker" }
+if (-not $ok) { Fail "the gateway did not answer on 127.0.0.1:8080. See: docker compose -p $Project logs gateway worker" }
 Write-Host ""
 Write-Host "Running: $($reply.Content)"
-Write-Host "Public: https://edit-api.latestavenue.com/status (once the tunnel and DNS are set up, SERVER.md)."
+Write-Host "Public: https://edit-api.latestavenue.com/status. From now on, releases install themselves."

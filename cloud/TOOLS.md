@@ -50,6 +50,10 @@ sign-in. When it does not answer at all, read Firestore `editServer/status`
 (`{lastSeen, version, online, queueDepth, sessionsFree}`, written every minute by the PC):
 `lastSeen` older than about 3 minutes means the edit server is offline.
 
+`/status` also has `health` (`ok` | `degraded`) and `update` (the updater's state:
+`deployed`, `updating`, `rolled_back`, ...). The owner-only `/api/admin/*` calls (services,
+logs, restart, drain, update, rollback) are in cloud/pc/SERVER.md.
+
 ## The flow, in order
 
 | Step | Tool | Params | Result |
