@@ -212,6 +212,7 @@ def test_full(samples, model, lines):
           and not rep2["new"] and not rep2["removed"], rep2)
 
     test_no_script(samples, model)
+    test_music(samples)
 
     try:
         import opentimelineio as otio
@@ -243,6 +244,66 @@ def test_full(samples, model, lines):
                             "csv=p=0", out], capture_output=True, text=True).stdout.strip()
     check("ffmpeg render has the cut's length", probe and abs(float(probe) - result["duration"]) < 0.5,
           (probe, result))
+
+
+def _drums(path, bpm, seconds=20.0, start=0.37, sr=22050):
+    """Kick on every beat (accented downbeat), off-beat hi-hats, a quiet pad. -> beat times."""
+    import numpy
+    import wave
+    t = numpy.arange(int(seconds * sr)) / sr
+    x = 0.05 * numpy.sin(2 * numpy.pi * 220 * t)
+    rng = numpy.random.default_rng(1)
+    beat, times, k = 60.0 / bpm, [], 0
+    while start + k * beat < seconds - 0.5:
+        b = start + k * beat
+        times.append(b)
+        i, n = int(b * sr), int(0.15 * sr)
+        x[i:i + n] += (1.0 if k % 4 == 0 else 0.6) * numpy.exp(-numpy.arange(n) / sr * 30) * \
+            numpy.sin(2 * numpy.pi * 60 * numpy.arange(n) / sr)
+        j, m = int((b + beat / 2) * sr), int(0.03 * sr)
+        if j + m < len(x):
+            x[j:j + m] += 0.2 * rng.standard_normal(m) * numpy.exp(-numpy.arange(m) / sr * 150)
+        k += 1
+    x = x / numpy.abs(x).max() * 0.8
+    with wave.open(path, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        w.writeframes((x * 32767).astype("<i2").tobytes())
+    return times
+
+
+def test_music(samples):
+    from vse_standalone.assembly import music, pipeline, render
+    folder = os.path.join(samples, "music")
+    os.makedirs(folder, exist_ok=True)
+    for bpm in (92.0, 123.0, 140.0):
+        truth = _drums(os.path.join(folder, "song.wav"), bpm)
+        r = music.analyse(os.path.join(folder, "song.wav"))
+        errors = [min(abs(b - t) for b in r["beats"]) for t in truth[2:-2]]
+        check("music: {:.0f} BPM found, beats within 50 ms, bars on the downbeat".format(bpm),
+              abs(r["tempo"] - bpm) < 1.5 and max(errors) < 0.05
+              and min(abs(r["bars"][0] - t) for t in truth[::4]) < 0.05,
+              (r["tempo"], max(errors)))
+    for name in ("A001_C001_S1_T1.mov", "A003_C003_BROLL.mov", "STILL_diner_sign.jpg"):
+        shutil.copy(os.path.join(samples, "media", name), folder)
+    doc = pipeline.assemble_music(folder, os.path.join(folder, "song.wav"), log=lambda t: None)
+    els = doc["scenes"][0]["elements"]
+    grid = set(round(b, 3) for b in doc["music"]["beats"]) | {0.0}
+    check("music: every cut on a beat", all(round(el["cut"]["in"], 3) in grid for el in els),
+          [el["cut"]["in"] for el in els])
+    check("music: the song plays through without a gap", all(
+        abs(a["cut"]["out"] - b["cut"]["in"]) < 1e-6 for a, b in zip(els, els[1:])))
+    check("music: neighbouring shots differ", all(
+        a["cover"]["clip"] != b["cover"]["clip"] for a, b in zip(els, els[1:])))
+    editing_script.choose_take(doc, els[1]["id"], 1)
+    check("music: swapping a shot keeps the song", els[1]["cut"]["clip"] == doc["music"]["song"]
+          and els[1]["cover"]["clip"] == els[1]["takes"][1]["clip"])
+    out = os.path.join(folder, "mv.mp4")
+    r = render.render(doc, out)
+    got = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0",
+                          out], capture_output=True, text=True).stdout.strip()
+    check("music: render is the song's length", got and abs(float(got) - 20.0) < 0.3, got)
 
 
 def test_no_script(samples, model):

@@ -54,6 +54,10 @@ def main(argv=None):
                    help="without a script: keep timecode order, don't ask the language model")
     p.add_argument("--cache", help="cache folder (default MEDIA/.assembly_cache)")
     p.add_argument("--render", help="also render the assembly with ffmpeg to this file")
+    p.add_argument("--music", nargs="?", const="", default=None,
+                   help="music-driven: cut to this song (or, with no value, the longest sound file)")
+    p.add_argument("--lyrics", help="with --music: lyric sheet (.txt or .pdf); lines start new shots")
+    p.add_argument("--bars-per-shot", type=int, default=2)
 
     p = sub.add_parser("text", help="editing script -> screenplay text")
     p.add_argument("doc")
@@ -103,10 +107,16 @@ def main(argv=None):
             _print(result)
     elif args.cmd == "assemble":
         from . import pipeline
-        doc = pipeline.assemble(args.media, args.script, model=args.model,
-                                image_backend=args.image_backend, cache_dir=args.cache,
-                                visual_grouping=not args.no_visual,
-                                ask_model=not args.no_model_order, log=log)
+        if args.music is not None:
+            doc = pipeline.assemble_music(args.media, args.music or None, args.lyrics,
+                                          model=args.model, image_backend=args.image_backend,
+                                          cache_dir=args.cache, bars_per_shot=args.bars_per_shot,
+                                          log=log)
+        else:
+            doc = pipeline.assemble(args.media, args.script, model=args.model,
+                                    image_backend=args.image_backend, cache_dir=args.cache,
+                                    visual_grouping=not args.no_visual,
+                                    ask_model=not args.no_model_order, log=log)
         editing_script.save(doc, args.output)
         log("wrote " + args.output)
         if args.render:

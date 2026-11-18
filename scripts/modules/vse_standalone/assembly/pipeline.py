@@ -187,3 +187,45 @@ def rough_script(clips, transcripts, groups):
                        "int_ext": None, "location": None, "time": None, "elements": elements})
     return {"source": None, "title": None, "title_page": [], "characters": [], "scenes": scenes,
             "rough": True}
+
+
+def assemble_music(media, song=None, lyrics=None, *, model=None, image_backend=None,
+                   cache_dir=None, bars_per_shot=2, log=print):
+    """Music-driven assembly: the song sets the timeline, pictures change on the beat, lyric
+    lines (if a sheet is given) start new shots. song: a file, or the longest sound file in
+    the folder. lyrics: plain text or PDF lyric sheet."""
+    from . import music
+    folder = os.path.abspath(media)
+    clips = [c for c in probe.scan(folder) if not c.get("error")]
+    cache_dir = cache_dir or os.path.join(folder, ".assembly_cache")
+    model = model or transcribe.DEFAULT_MODEL
+    if song:
+        song_info = probe.probe(song)
+    else:
+        sounds = [c for c in clips if c["kind"] == "audio"]
+        if not sounds:
+            raise ValueError("No song: give one, or put a sound file in the folder")
+        song_info = max(sounds, key=lambda c: c.get("duration") or 0)
+    pictures = [c for c in clips if c["kind"] in ("video", "image") and c["path"] != song_info["path"]]
+    _log(log, "song: {:s} ({:.1f}s); {:d} clips".format(song_info["name"], song_info.get("duration") or 0,
+                                                       len(pictures)))
+    lines = music.read_lyrics(lyrics) if lyrics else None
+    words = None
+    if lines:
+        words = transcribe.transcribe(song_info["path"], model,
+                                      cache_dir=os.path.join(cache_dir, "words"))
+        _log(log, "heard in the song: " + words["text"][:120])
+    visuals, backend = visual.describe_clips(pictures, cache_dir, backend=image_backend)
+    emb = {p: v["embedding"] for p, v in visuals.items() if "embedding" in v}
+    groups = visual.group(emb, visual.THRESHOLD[backend])
+    for v in visuals.values():
+        v.pop("embedding", None)
+    _log(log, "looks ({:s}): {:d} groups".format(backend, len(groups)))
+    doc = music.build(song_info, pictures, groups, visuals, lines, words,
+                      bars_per_shot=bars_per_shot, title=os.path.splitext(song_info["name"])[0])
+    doc["sources"] = {"script": lyrics, "media": folder}
+    doc["settings"] = {"whisper_model": str(model), "image_backend": backend}
+    _log(log, "music: {:.1f} BPM, {:d} sections, {:d} of {:d} lyric lines timed".format(
+        doc["music"]["tempo"], len(doc["scenes"][0]["elements"]), doc["music"]["lines_timed"],
+        len(lines or [])))
+    return doc

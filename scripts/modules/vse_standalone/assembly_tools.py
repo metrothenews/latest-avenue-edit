@@ -127,7 +127,8 @@ def assembly_status() -> dict:
 def start_assembly(media_folder: str, output: str, script: typing.Optional[str] = None,
                    model: typing.Optional[str] = None,
                    image_backend: typing.Optional[typing.Literal["mobileclip", "signature"]] = None,
-                   visual_grouping: bool = True, model_order: bool = True) -> dict:
+                   visual_grouping: bool = True, model_order: bool = True,
+                   music: typing.Optional[str] = None, lyrics: typing.Optional[str] = None) -> dict:
     """Start building an editing script (assembly cut) from footage and an optional screenplay.
 
     Runs in the background: transcribes every take, matches takes to script lines, groups
@@ -137,6 +138,9 @@ def start_assembly(media_folder: str, output: str, script: typing.Optional[str] 
     :arg script: Screenplay .pdf/.fountain/.txt.
     :arg model: faster-whisper model (default base.en).
     :arg model_order: Without a script, ask the language model once for the scene order.
+    :arg music: Music-driven edit (music video): the song to cut to, or "" for the longest
+      sound file in the folder. Pictures change on the beat.
+    :arg lyrics: With music: the lyric sheet (.txt or .pdf); each line starts a new shot.
     """
     media = _path(media_folder)
     if not os.path.isdir(media):
@@ -154,6 +158,10 @@ def start_assembly(media_folder: str, output: str, script: typing.Optional[str] 
         args.append("--no-visual")
     if not model_order:
         args.append("--no-model-order")
+    if music is not None:
+        args += ["--music"] + ([_path(music)] if music else [])
+        if lyrics:
+            args += ["--lyrics", _path(lyrics)]
     return _start_job("assembly", args, out + ".log", out, _assembly_result)
 
 

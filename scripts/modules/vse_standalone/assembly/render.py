@@ -57,8 +57,9 @@ def command(doc, output, width=None, height=None, fps=None, crf=20, preset="very
                      "anullsrc=channel_layout=stereo:sample_rate=48000"]
             filters.append("[{:d}:a]atrim=0:{:.3f}[a{:d}]".format(n_in, dur, k))
             n_in += 1
-        filters.append("[{:d}:v:0]{:s},trim=0:{:.3f},setpts=PTS-STARTPTS[v{:d}]".format(
-            v_in, norm, dur, k))
+        # A clip shorter than its slot holds its last frame, so picture and sound stay in step.
+        filters.append("[{:d}:v:0]{:s},tpad=stop_mode=clone:stop_duration={:.3f},trim=0:{:.3f},"
+                       "setpts=PTS-STARTPTS[v{:d}]".format(v_in, norm, dur, dur, k))
         labels.append("[v{0:d}][a{0:d}]".format(k))
     filters.append("{:s}concat=n={:d}:v=1:a=1[v][a]".format("".join(labels), len(events)))
     args += ["-filter_complex", ";".join(filters), "-map", "[v]", "-map", "[a]",

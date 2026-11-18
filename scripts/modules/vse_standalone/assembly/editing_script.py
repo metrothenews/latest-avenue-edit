@@ -306,6 +306,13 @@ def choose_take(doc, element_id, take):
     if not 0 <= take < len(el["takes"]):
         raise ValueError("Line {:s} has takes 0..{:d}".format(element_id, len(el["takes"]) - 1))
     el["take"] = take
+    if el.get("music"):
+        # Music sections keep the song; only the picture changes.
+        length = el["cut"]["out"] - el["cut"]["in"]
+        c = dict(el["takes"][take])
+        c["out"] = round(c["in"] + length, 3)
+        el["cover"] = c
+        return el
     if el["type"] == "action":
         el.pop("cut_locked", None)
     _fill_cuts(doc, scene)
