@@ -128,7 +128,8 @@ def start_assembly(media_folder: str, output: str, script: typing.Optional[str] 
                    model: typing.Optional[str] = None,
                    image_backend: typing.Optional[typing.Literal["mobileclip", "signature"]] = None,
                    visual_grouping: bool = True, model_order: bool = True,
-                   music: typing.Optional[str] = None, lyrics: typing.Optional[str] = None) -> dict:
+                   music: typing.Optional[str] = None, lyrics: typing.Optional[str] = None,
+                   song: typing.Optional[str] = None) -> dict:
     """Start building an editing script (assembly cut) from footage and an optional screenplay.
 
     Runs in the background: transcribes every take, matches takes to script lines, groups
@@ -141,7 +142,10 @@ def start_assembly(media_folder: str, output: str, script: typing.Optional[str] 
     :arg music: Music-driven edit (music video): the song to cut to, or "" for the longest
       sound file in the folder. Pictures change on the beat.
     :arg lyrics: With music: the lyric sheet (.txt or .pdf); each line starts a new shot.
+    :arg song: Same as music (the song file); either turns on the music-driven edit.
     """
+    if song is not None and music is None:
+        music = song
     media = _path(media_folder)
     if not os.path.isdir(media):
         raise api.APIError("Not a folder: {:s}".format(media))
@@ -452,3 +456,133 @@ def upload_to_drive(filepath: str, folder_id: str, access_token: str,
                       os.path.join(meta, stem + ".upload.json"), _json_result,
                       env_extra={"GOOGLE_ACCESS_TOKEN": access_token},
                       stdout=os.path.join(meta, stem + ".upload.json"))
+
+
+# -----------------------------------------------------------------------------
+# Uploads, sync fixes, thumbnails (for the website).
+
+UPLOAD_EXT = {".pdf", ".txt", ".fountain", ".fdx", ".lrc", ".srt", ".cube"} | probe.VIDEO_EXT | \
+    probe.AUDIO_EXT | probe.IMAGE_EXT
+UPLOAD_CHUNK = 700 * 1024           # decoded bytes per call (the gateway takes 1 MB requests)
+
+
+@tool(mutates=False)
+def save_upload(name: str, data_base64: str, folder: str = "uploads", append: bool = False) -> dict:
+    """Save a file sent from the browser (a script PDF, a lyric sheet, a song) into the media
+    folder. Large files go in several calls: the first without append, the rest with append.
+
+    :arg name: File name, e.g. "script.pdf". Only the name is used, never a path.
+    :arg data_base64: The bytes, base64-encoded (up to about 700 KB decoded per call).
+    :arg folder: Folder inside the media folder (default "uploads").
+    :arg append: Add to the file instead of starting it.
+    """
+    import base64
+    import binascii
+    safe = os.path.basename(name.replace("\\", "/")).strip()
+    if not safe or safe.startswith("."):
+        raise api.APIError("Give the file a name, e.g. script.pdf")
+    if os.path.splitext(safe)[1].lower() not in UPLOAD_EXT:
+        raise api.APIError("This kind of file can't be uploaded here: {:s}".format(safe))
+    sub = os.path.normpath(folder or "uploads")
+    if sub.startswith("..") or os.path.isabs(sub):
+        raise api.APIError("The folder must be inside the media folder")
+    try:
+        data = base64.b64decode(data_base64, validate=True)
+    except (binascii.Error, ValueError):
+        raise api.APIError("The file data is not valid base64") from None
+    if len(data) > UPLOAD_CHUNK:
+        raise api.APIError("Send at most {:d} KB per call (use append for the rest)".format(UPLOAD_CHUNK // 1024))
+    dest = os.path.join(api.media_root(), sub)
+    os.makedirs(dest, exist_ok=True)
+    path = os.path.join(dest, safe)
+    if append and not os.path.exists(path):
+        raise api.APIError("Nothing to append to: send the first part without append")
+    with open(path, "ab" if append else "wb") as fh:
+        fh.write(data)
+    return {"filepath": path, "relative": os.path.join(sub, safe), "bytes": os.path.getsize(path)}
+
+
+@tool(mutates=False)
+def set_clip_sync(filepath: str, clip: str, audio_clip: typing.Optional[str] = None,
+                  offset: typing.Optional[float] = None, nudge: typing.Optional[float] = None,
+                  clear: bool = False) -> dict:
+    """Fix one clip's sound sync in the editing script: pair it with a sound file, set or nudge
+    the offset, or remove the pairing (the clip's own sound plays again).
+
+    Offset: recorder time = clip time + offset (seconds). Playback, layout, render and exports
+    use it at once; transcription and take matching use it on the next start_assembly.
+    :arg clip: The camera clip's id (as in the editing script's media).
+    :arg audio_clip: The sound file's id. Default: the one it is synced to now.
+    :arg offset: Set the offset to this.
+    :arg nudge: Move the current offset by this many seconds (e.g. 0.04 is one frame at 25 fps).
+    :arg clear: Unsync the clip.
+    """
+    path, doc = _load(filepath)
+    media = doc["media"]
+    if clip not in media:
+        raise api.APIError("No clip {!r} in the editing script".format(clip))
+    m = media[clip]
+    old = m.get("sound")
+    if old and old["clip"] in media:
+        media[old["clip"]]["synced_to"] = [c for c in media[old["clip"]].get("synced_to", []) if c != clip]
+    if clear:
+        m.pop("sound", None)
+        editing_script.save(doc, path)
+        return {"clip": clip, "sound": None}
+    audio = audio_clip or (old or {}).get("clip")
+    if not audio:
+        raise api.APIError("Name the sound file to sync {:s} with (audio_clip)".format(clip))
+    if audio not in media or media[audio]["kind"] != "audio":
+        raise api.APIError("{!r} is not a sound file in the editing script".format(audio))
+    value = offset if offset is not None else (old or {}).get("offset", 0.0)
+    if nudge:
+        value += nudge
+    m["sound"] = {"clip": audio, "offset": round(float(value), 4), "method": "manual", "score": 1.0}
+    media[audio].setdefault("synced_to", [])
+    if clip not in media[audio]["synced_to"]:
+        media[audio]["synced_to"].append(clip)
+    if audio in doc.get("unplaced", []):
+        doc["unplaced"].remove(audio)
+    editing_script.save(doc, path)
+    return {"clip": clip, "sound": m["sound"]}
+
+
+@tool(mutates=False)
+def take_thumbnails(filepath: str, line: str, width: int = 160, inline: bool = True) -> dict:
+    """A thumbnail for each take of a line (the frame in the middle of the take), so the page
+    can show the alternatives side by side.
+
+    :arg line: Line id, e.g. "S1-3".
+    :arg width: Thumbnail width in pixels (16-640).
+    :arg inline: Also return each JPEG as a data: URL (the page can't read the editor's files).
+    """
+    import base64
+    from .assembly import visual
+    path, doc = _load(filepath)
+    try:
+        _scene, el = editing_script.find(doc, line)
+    except KeyError as ex:
+        raise api.APIError(str(ex).strip("'\"")) from None
+    width = max(16, min(640, int(width)))
+    folder = os.path.join(os.path.dirname(path), ".thumbs", os.path.basename(path))
+    out = []
+    for k, take in enumerate(el.get("takes") or []):
+        pic = take
+        if doc["media"][take["clip"]]["kind"] == "audio":
+            pic = el.get("cover") or None
+        item = {"take": k, "clip": take["clip"], "chosen": k == el.get("take"),
+                "score": take.get("score"), "heard": take.get("heard")}
+        if pic:
+            m = doc["media"][pic["clip"]]
+            t = None if m["kind"] == "image" else round((pic["in"] + pic["out"]) / 2, 3)
+            thumb = os.path.join(folder, "{:s}_{:d}_{:d}.jpg".format(line, k, width))
+            try:
+                visual.thumbnail(m["path"], t, thumb, width=width)
+                item.update(thumbnail=thumb, time=t, picture_clip=pic["clip"])
+                if inline:
+                    with open(thumb, "rb") as fh:
+                        item["data_url"] = "data:image/jpeg;base64," + base64.b64encode(fh.read()).decode()
+            except Exception as ex:  # a broken clip shouldn't hide the other takes
+                item["error"] = str(ex)[:200]
+        out.append(item)
+    return {"line": line, "takes": out}

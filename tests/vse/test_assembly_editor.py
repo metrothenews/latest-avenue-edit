@@ -33,12 +33,83 @@ def check(name, ok, detail=""):
         failures.append(name)
 
 
+def test_site_tools(lines):
+    import base64
+    import json
+    import shutil
+    import time
+    # save_upload: a script PDF in two parts.
+    data_dir = tempfile.mkdtemp()
+    os.makedirs(os.path.join(data_dir, "media"))
+    os.environ["VSE_DATA"] = data_dir
+    pdf = open(os.path.join(samples, "script.pdf"), "rb").read()
+    half = len(pdf) // 2
+    api.call("save_upload", {"name": "../../script.pdf", "data_base64": base64.b64encode(pdf[:half]).decode()})
+    r = api.call("save_upload", {"name": "script.pdf", "append": True,
+                                 "data_base64": base64.b64encode(pdf[half:]).decode()})
+    check("save_upload: two parts make the file, inside the media folder",
+          r["filepath"] == os.path.join(data_dir, "media", "uploads", "script.pdf") and
+          open(r["filepath"], "rb").read() == pdf, r)
+    s = api.call("read_screenplay", {"filepath": "uploads/script.pdf"})
+    check("save_upload: the uploaded script reads", s["dialogue_lines"] == 6)
+    try:
+        api.call("save_upload", {"name": "x.exe", "data_base64": "AAAA"})
+        check("save_upload: refuses other kinds of file", False)
+    except api.APIError:
+        check("save_upload: refuses other kinds of file", True)
+
+    # set_clip_sync: nudge, then clear, and the layout follows.
+    work = os.path.join(data_dir, "cut.edit.json")
+    shutil.copy(doc_path, work)
+    doc = json.load(open(work))
+    clip = next(c for c, m in doc["media"].items() if m.get("sound"))
+    before = doc["media"][clip]["sound"]["offset"]
+    r = api.call("set_clip_sync", {"filepath": work, "clip": clip, "nudge": 0.5})
+    check("set_clip_sync: nudge", abs(r["sound"]["offset"] - before - 0.5) < 1e-6 and r["sound"]["method"] == "manual", r)
+    api.call("lay_out_editing_script", {"filepath": work})
+    sc = api._scene()
+    fps = sc.render.fps / sc.render.fps_base
+    mine = [st for st in sc.sequence_editor.strips_all if st.get("editing_script") == work]
+    snd = next(st for st in mine if st.type == "SOUND" and clip in st.name)
+    pic = next(st for st in mine if st.type == "MOVIE" and clip in st.name)
+    shift = ((pic.left_handle - pic.content_start) - (snd.left_handle - snd.content_start)) / fps
+    check("set_clip_sync: the laid-out sound moves with it", abs(-shift - (before + 0.5)) <= 1.5 / fps,
+          (shift, before + 0.5))
+    api.call("set_clip_sync", {"filepath": work, "clip": clip, "clear": True})
+    check("set_clip_sync: clear", "sound" not in json.load(open(work))["media"][clip])
+
+    # take_thumbnails: one picture per take.
+    line = next(l for l in lines if len(l["takes"]) > 1)
+    r = api.call("take_thumbnails", {"filepath": doc_path, "line": line["id"], "width": 96})
+    check("take_thumbnails: a JPEG per take", len(r["takes"]) == len(line["takes"]) and all(
+        t.get("data_url", "").startswith("data:image/jpeg;base64,") and os.path.exists(t["thumbnail"])
+        for t in r["takes"]), [t.get("error") for t in r["takes"]])
+
+    # start_assembly with a song and lyrics (music video), through the job.
+    music = os.path.join(samples, "music")
+    if os.environ.get("VSE_ASSEMBLY_PYTHON") and os.path.exists(os.path.join(music, "song.wav")):
+        j = api.call("start_assembly", {"media_folder": music, "output": os.path.join(data_dir, "mv.edit.json"),
+                                        "song": os.path.join(music, "song.wav"),
+                                        "lyrics": os.path.join(samples, "lyrics.txt")})
+        while True:
+            r = api.call("job_status", {"job": j["job"]})
+            if r["state"] != "running":
+                break
+            time.sleep(1)
+        check("start_assembly with song and lyrics", r["state"] == "done" and r["result"]["events"] >= 4,
+              r["log"][-5:])
+        if r["state"] == "done":
+            lay = api.call("lay_out_editing_script", {"filepath": os.path.join(data_dir, "mv.edit.json")})
+            check("music edit lays out", lay["events"] == r["result"]["events"])
+
+
 def main():
     names = {t["name"] for t in api.describe()}
     wanted = {"probe_media", "read_screenplay", "assembly_status", "start_assembly", "assembly_job",
               "get_editing_script", "edit_editing_script", "choose_take", "set_line_cut",
               "lay_out_editing_script", "render_editing_script", "job_status", "export_sequence",
-              "fetch_drive_folder", "upload_to_drive"}
+              "fetch_drive_folder", "upload_to_drive", "save_upload", "set_clip_sync",
+              "take_thumbnails"}
     check("assembly tools are registered", wanted <= names, wanted - names)
 
     s = api.call("read_screenplay", {"filepath": os.path.join(samples, "script.pdf")})
@@ -92,6 +163,8 @@ def main():
         seq = os.path.join(tempfile.mkdtemp(), "cut.fcpxml")
         r = api.call("export_sequence", {"filepath": doc_path, "output": seq})
         check("export_sequence from the editor", r["events"] == len(with_cut) and os.path.exists(seq), r)
+
+    test_site_tools(lines)
 
     out = os.path.join(tempfile.mkdtemp(), "frame.png")
     r = api.call("render_frame", {"frame": 30, "filepath": out})
