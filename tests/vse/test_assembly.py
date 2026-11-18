@@ -247,12 +247,14 @@ def test_full(samples, model, lines):
         edl_first = next(l for l in open(os.path.join(exp, "cut.edl")) if l[:3].isdigit()).split()
         import re as _re
         seq = _re.search(r"<sequence[^>]*>", open(os.path.join(exp, "cut.fcpxml")).read()).group(0)
-        xml_tc = _re.search(r"<timecode>.*?<string>([^<]+)</string>", open(os.path.join(exp, "cut.xml")).read(), _re.S)
+        import xml.etree.ElementTree as _ET
+        _seq = _ET.parse(os.path.join(exp, "cut.xml")).getroot().find(".//sequence")
+        xml_tc = _seq.findtext("timecode/string")          # the sequence's own, not a clip's
         otio_start = otio.adapters.read_from_file(os.path.join(exp, "cut.otio")).global_start_time
         check("exports start at 01:00:00:00 (EDL, FCPXML, FCP 7 XML, OTIO)",
               edl_first[-2] == "01:00:00:00" and 'tcStart="3600/1s"' in seq
-              and xml_tc and xml_tc.group(1) == "01:00:00:00" and abs(otio_start.to_seconds() - 3600) < 1e-6,
-              (edl_first[-2:], seq, xml_tc and xml_tc.group(1), otio_start))
+              and xml_tc == "01:00:00:00" and abs(otio_start.to_seconds() - 3600) < 1e-6,
+              (edl_first[-2:], seq, xml_tc, otio_start))
 
     out = os.path.join(samples, "cut.mp4")
     result = render.render(doc, out)
