@@ -57,11 +57,28 @@ out, ready for quick crop / colour in the game view and then fine editing the no
 
 Each step lists what "done" means.
 
-### 1. Connect Google Drive and select the footage folder (with audio)
+### 1. Import: pick media from Google Drive (controllable)
 
-Done when: the user signs in to Google Drive, picks a folder, and the editor has a list of
-every video, photo and audio file in it with its technical metadata (duration, frame rate,
-resolution, codec, audio channels, timecode if present), read by ffprobe.
+- **Drive browser with multi-select.** The user drags clips, selections or whole folders
+  into an **Add Media** list. Every drag has a button equivalent for touch: drag is never
+  the only way (on a phone, Browse and Add Media are tabs).
+- **Edit the list before starting.**
+- **During the import:** pause, resume, cancel, and edit the list live (add, remove, and
+  remove the file currently downloading).
+- **In the editor:** a persistent, resumable queue: one file at a time, each download
+  resumed with HTTP Range requests, duplicates skipped by Drive file id, recovery when the
+  Drive sign-in token expires (`needs_token`), and after a restart the queue comes back
+  paused.
+- Optional 140p proxies after download.
+- **Tools:** `import_start`, `import_status`, `import_pause`, `import_resume`,
+  `import_edit`, `import_cancel`, `remove_media`, `list_media` (contract documented by the
+  builder in `cloud/TOOLS.md`). The older `fetch_drive_folder` stays as an alias.
+
+Done when: the user can build the list, start, pause, resume, edit and cancel an import
+from both a computer and a phone; an interrupted or restarted import resumes without
+re-downloading finished files; and the editor has every imported video, photo and audio
+file with its technical metadata (duration, frame rate, resolution, codec, audio channels,
+timecode if present), read by ffprobe.
 
 ### 1b. Sync sound (when there is separate audio)
 

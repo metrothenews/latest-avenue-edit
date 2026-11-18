@@ -20,6 +20,7 @@ media, not yet on Sam's footage or the PC. See [PRODUCT.md](PRODUCT.md) for what
 | 8 | Submit: lay the editing script out in the Blender sequencer | done (in container) |
 | 9 | Guided `/edit` flow on the website, with review and sound panel (latest-avenue) | in progress (build passes; not deployed; real sign-in untested) |
 | 10 | Google Drive: fetch the footage folder, upload exports | in progress (tested against a stand-in only) |
+| 10b | Controllable import: Drive browser with multi-select, Add Media list (drag + buttons), pause / resume / cancel / live edit, persistent resumable queue, optional 140p proxies; tools `import_*`, `remove_media`, `list_media` | not started (requested by Sam 2026-11-18; no import tools on the builder's branch at `3121b027`) |
 | 11 | Quick crop / quick colour on the assembled cut in the game view | not started |
 | 12 | Export: ffmpeg render; OTIO / FCPXML / FCP7 XML / EDL for Resolve, Premiere, Final Cut | in progress (pass format checks incl. Apple's FCPXML DTD; not opened in the three editors) |
 | 13 | No-script mode: transcript + image recognition → script, LLM best-guess order | in progress (pushed; not separately reported as tested) |

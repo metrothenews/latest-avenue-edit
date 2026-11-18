@@ -22,3 +22,6 @@ behind a setting, off by default: a guess Sam may overrule, see DECISIONS.md).
    is not committed.
 8. **Two Drive integrations?** Should the editor's existing Drive import/export elsewhere be
    reconciled with the builder's `assembly/drive.py`?
+9. **Reconciling the private production repos.** Your private production repos have their
+   own `cloud/drive.py` and an `/edit` Drive panel (commit `369d181`). When the PC is
+   merged, which one wins, or how are they combined with the new import queue?
