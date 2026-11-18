@@ -280,7 +280,7 @@ def _drums(path, bpm, seconds=20.0, start=0.37, sr=22050):
 
 def test_music(samples):
     from vse_standalone.assembly import music, pipeline, render
-    folder = os.path.join(samples, "music")
+    folder = os.path.join(samples, "music_beats")
     shutil.rmtree(folder, ignore_errors=True)
     os.makedirs(folder)
     for bpm in (92.0, 123.0, 140.0):
@@ -291,9 +291,23 @@ def test_music(samples):
               abs(r["tempo"] - bpm) < 1.5 and max(errors) < 0.05
               and min(abs(r["bars"][0] - t) for t in truth[::4]) < 0.05,
               (r["tempo"], max(errors)))
-    for name in ("A001_C001_S1_T1.mov", "A003_C003_BROLL.mov", "STILL_diner_sign.jpg"):
-        shutil.copy(os.path.join(samples, "media", name), folder)
-    doc = pipeline.assemble_music(folder, os.path.join(folder, "song.wav"), log=lambda t: None)
+    with open(os.path.join(samples, "truth.json")) as fh:
+        song_truth = json.load(fh).get("music")
+    if song_truth:      # the generated music shoot: drums, sung lyric lines, five looks
+        folder = os.path.join(samples, "music")
+        song = os.path.join(folder, "song.wav")
+        doc = pipeline.assemble_music(folder, song, os.path.join(samples, "lyrics.txt"),
+                                      log=lambda t: None)
+        starts = [el["cut"]["in"] for el in doc["scenes"][0]["elements"]]
+        hit = [any(0 <= line["start"] - st <= 0.6 for st in starts) for line in song_truth["lines"]]
+        check("music: tempo of the generated song", abs(doc["music"]["tempo"] - song_truth["tempo"]) < 1.5,
+              doc["music"]["tempo"])
+        check("music: each sung line starts a shot on the beat before it", all(hit),
+              (hit, starts, [l["start"] for l in song_truth["lines"]]))
+    else:
+        for name in ("A001_C001_S1_T1.mov", "A003_C003_BROLL.mov", "STILL_diner_sign.jpg"):
+            shutil.copy(os.path.join(samples, "media", name), folder)
+        doc = pipeline.assemble_music(folder, os.path.join(folder, "song.wav"), log=lambda t: None)
     els = doc["scenes"][0]["elements"]
     grid = set(round(b, 3) for b in doc["music"]["beats"]) | {0.0}
     check("music: every cut on a beat", all(round(el["cut"]["in"], 3) in grid for el in els),
@@ -309,7 +323,8 @@ def test_music(samples):
     r = render.render(doc, out)
     got = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0",
                           out], capture_output=True, text=True).stdout.strip()
-    check("music: render is the song's length", got and abs(float(got) - 20.0) < 0.3, got)
+    want = 16.0 if song_truth else 20.0
+    check("music: render is the song's length", got and abs(float(got) - want) < 0.3, got)
 
 
 def test_no_script(samples, model):
