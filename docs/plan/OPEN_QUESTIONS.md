@@ -4,7 +4,8 @@ Only Sam can answer these. When one is answered, move the answer into
 [DECISIONS.md](DECISIONS.md) (and [PRODUCT.md](PRODUCT.md) if it changes the product) and
 delete it here. Answered on 2026-11-18: content types, separate sound, how takes are told
 apart, target editors, GPU (NVIDIA RTX), built-in LLM (local, no API key), test material. Later: the PC (RTX 3050, 8 GB; 64 GB RAM); the chat panel (hidden
-behind a setting, off by default: a guess Sam may overrule, see DECISIONS.md).
+behind a setting, off by default: a guess Sam may overrule, see DECISIONS.md); Cloudflare
+for the stable hostname; the PC on 24/7 with an offline contingency.
 
 1. **Going public?** For now the app stays behind your sign-in. Should it ever open to
    other people (clients, crew, the public)?
@@ -25,10 +26,6 @@ behind a setting, off by default: a guess Sam may overrule, see DECISIONS.md).
 9. **Reconciling the private production repos.** Your private production repos have their
    own `cloud/drive.py` and an `/edit` Drive panel (commit `369d181`). When the PC is
    merged, which one wins, or how are they combined with the new import queue?
-10. **Domain and Cloudflare.** OK to put the service on your own domain (e.g.
-    `edit-api.latestavenue.com`) through Cloudflare Tunnel, replacing the Tailscale address?
-11. **Monthly cloud budget cap.** How much, before cloud workers pause?
-12. **Beta size.** How many users in the first multi-user beta (P1)?
-13. **Is the PC on 24/7?** This decides whether the service is reachable when the cloud pool
-    doesn't exist yet.
-14. **Pricing model.** Free, subscription, pay per use (e.g. GPU time), or something else?
+10. **Monthly cloud budget cap.** How much, before cloud workers pause?
+11. **Beta size.** How many users in the first multi-user beta (P1)?
+12. **Pricing model.** Free, subscription, pay per use (e.g. GPU time), or something else?

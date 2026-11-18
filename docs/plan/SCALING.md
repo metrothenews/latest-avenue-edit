@@ -55,7 +55,8 @@ There is one Docker image. Its configuration decides which of the roles below it
 ## When things go wrong
 
 - **The PC goes offline.** The gateway marks the `pc` pool as down. Jobs wait, or go to
-  cloud workers once P2 exists. The site shows a plain status message.
+  cloud workers once P2 exists. The site shows the offline message (see "Answered by Sam"
+  below).
 - **Something restarts.** Each job's state lives in Redis/Firestore, so a restart loses
   nothing.
 - **Cost.** Each user has a quota, and a monthly cloud budget cap pauses the cloud workers
@@ -68,8 +69,21 @@ distributing a modified Blender triggers GPL obligations. This is not legal advi
 repository already publishes builds of the modified editor (release v0.1.0), and its source
 is public.
 
+## Answered by Sam (2026-11-18)
+
+- **Cloudflare.** Use Cloudflare Tunnel for a stable hostname such as
+  `edit-api.latestavenue.com`. This needs latestavenue.com's DNS moved to Cloudflare's free
+  plan, keeping the Firebase Hosting records.
+- **The PC stays on 24/7.** If it goes offline:
+  - a public `/status` endpoint reports it, and the server writes a heartbeat to Firestore
+    every 60 s;
+  - the site shows "The editor server is offline (since …). Your projects are safe; try
+    again later.";
+  - the parts that don't need the server stay usable (browsing Drive, reading saved editing
+    scripts);
+  - queued work resumes when the PC restarts.
+
 ## Open questions
 
-These are in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md): your own domain plus Cloudflare for the
-tunnel, the monthly cloud budget cap, the size of the beta, whether the PC stays on 24/7, and
-the pricing model.
+These are in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md): the monthly cloud budget cap, the size of
+the beta, and the pricing model.
