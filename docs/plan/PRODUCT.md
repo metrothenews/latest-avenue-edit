@@ -14,6 +14,18 @@ The user edits that document like a screenplay; the footage moves with the text.
 submit it, the real sequencer (the Blender-based editor in this repo) opens with the cut laid
 out, ready for quick crop / colour in the game view and then fine editing the normal way.
 
+## Who it is for and when
+
+- **Deadline:** a working consumer-facing app by noon Eastern, 2026-11-18 (17:00 UTC).
+- **Consumer-facing** for now means intuitive for a non-technical person, still behind Sam's
+  sign-in. (Assumption; opening it to the public is a separate decision Sam hasn't made.)
+- **Content it must handle:** scripted monologue-driven social media content, scripted short
+  films, ads/commercials, music videos, interviews/docs. So the assembly cut must handle both
+  dialogue-driven and music-driven edits.
+- **Runs on** Sam's Windows PC with an NVIDIA RTX graphics card: CUDA when available, CPU
+  fallback.
+- **Sam's media is never committed** to the repository.
+
 ## Principles
 
 - **Code and algorithms first.** Every step is done programmatically wherever possible.
@@ -50,6 +62,16 @@ Done when: the user signs in to Google Drive, picks a folder, and the editor has
 every video, photo and audio file in it with its technical metadata (duration, frame rate,
 resolution, codec, audio channels, timecode if present), read by ffprobe.
 
+### 1b. Sync sound (when there is separate audio)
+
+Audio varies: sometimes a separate recorder, sometimes camera audio only. When there is
+separate audio, it is synced to the video by, in order of preference: timecode, then
+waveform matching (against the camera's scratch audio), then the clap/slate. Skipped when
+there is only camera audio.
+
+Done when: every separately recorded audio file is paired with its video clip and offset,
+or listed as unsynced.
+
 ### 2. Upload or select the script (PDF)
 
 Done when: the PDF is turned into structured screenplay data (scenes with headings, action,
@@ -65,6 +87,10 @@ Not built now. Contingencies to keep in mind so it slots in later:
 - The editing script's data reserves a place for this now (per take: slate, circled flag,
   supervisor notes), left empty until the feature exists.
 - Rule when it is added: **a circled take wins**; otherwise the step-4 scoring decides.
+
+Telling takes apart (now, without notes): Sam uses all of these at different times, so each
+is a fallback for the one before: timecode/metadata, file names, clapperboard, and nothing
+formal at all. With no guidance it should still make very good guesses.
 
 Done (later) when: notes are parsed into per-take records and matched to clips by slate.
 
@@ -98,14 +124,25 @@ passes over the assembled cut in the game view.
 
 ### Then
 
-The user fine-tunes the edit the traditional way and exports either a rendered video or a
-sequence (for another editor) to Google Drive. Done when both exports land in the user's
-Drive.
+The user fine-tunes the edit the traditional way and exports to Google Drive either a
+rendered video or a sequence file for **DaVinci Resolve, Premiere Pro or Final Cut Pro**
+(proposed: OpenTimelineIO at the core, with FCPXML / FCP7 XML / EDL adapters). Done when a
+render and a sequence that opens in each of the three editors land in the user's Drive.
 
 ## No script provided
 
 Transcribe the audio and use image recognition to assemble a script, then have the LLM give
 its best guess at how to reorder everything. This is one of the few places the LLM is used.
+
+## Music-driven edits
+
+Music videos are cut to the song, not to dialogue. First test: sync lyrics to the song
+(Sam's "assignment 17" IMPULSIVE takes and lyric sheet). The existing lyric tools in
+`tools/vse_lyrics/` already time a lyric sheet against audio.
+
+## The built-in LLM
+
+A local model on the PC (no API key), used only as a last-resort fallback.
 
 ## Proposed stack (to be confirmed by the builder)
 
@@ -118,10 +155,23 @@ its best guess at how to reorder everything. This is one of the few places the L
 | Grouping shots into setups / sequences | MobileCLIP or SigLIP image embeddings |
 | Editing script | JSON |
 | Sequencing | Blender (this repo's editor) only |
-| Sequence export to other editors | OpenTimelineIO (an `export_otio` tool already exists in `api.py`; it depends on the build having Blender's OTIO operator) |
+| Sync of separate audio | timecode, then waveform matching, then clap/slate (tools not chosen yet) |
+| Sequence export to other editors | OpenTimelineIO core with FCPXML / FCP7 XML / EDL adapters, for Resolve, Premiere, Final Cut (an `export_otio` tool already exists in `api.py`; it depends on the build having Blender's OTIO operator) |
 
 Research still to do: the most lightweight open-source image recognition models and
 datasets, and the same for audio transcription.
+
+## Test material
+
+In Sam's Google Drive folder "Video Editing Resources" (never copied into the repository):
+
+- "culture clips collections": 100+ short mp4s grouped by subject (e.g. cars, people).
+- "audio/Nov 2026/assignment 17": takes of the song IMPULSIVE, plus a "song lyrics" doc.
+  First music test: sync the lyrics to the song.
+- "docs/Ad Scripts for Assignment N": real ad scripts.
+
+Little dialogue footage exists yet; the builder's `tests/vse/assembly/make_samples.py`
+generates a synthetic dialogue shoot for tests.
 
 ## Out of scope for now
 
