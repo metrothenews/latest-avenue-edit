@@ -329,7 +329,7 @@ def lay_out_editing_script(filepath: str, channel: int = 1, frame_start: int = 1
     placed, last_scene = [], None
     for ev in events:
         length = max(1, int(round((ev["out"] - ev["in"]) * fps)))
-        label = "{:s} {:s}".format(ev["element"], ev["clip"])[:60]
+        label = "{:s} {:s}".format(ev["element"], (ev["picture"] or {}).get("clip") or ev["clip"])[:60]
         made = []
         pic = ev["picture"]
         if pic:
