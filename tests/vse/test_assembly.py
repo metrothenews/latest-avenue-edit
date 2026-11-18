@@ -411,10 +411,22 @@ def test_no_script(samples, model):
     requests = []
 
     class Model(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):          # /v1/models: "is a server there?"
+            data = b'{"data": [{"id": "stand-in"}]}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
         def do_POST(self):
             body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             requests.append(body)
-            reply = {"choices": [{"message": {"content": 'Order: ["S3", "S1", "S2"]'}}]}
+            # The prompt lists the scenes under neutral letters; answer: last, first, second.
+            prompt = body["messages"][0]["content"]
+            listed = [sc["id"] for sc in json.loads(prompt[prompt.index("[{"):])]
+            answer = json.dumps([listed[2], listed[0], listed[1]])
+            reply = {"choices": [{"message": {"content": "Order: " + answer}}]}
             data = json.dumps(reply).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")

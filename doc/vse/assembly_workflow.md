@@ -165,6 +165,26 @@ Nearest neighbour in the same category: MobileCLIP 72%, colour signature 25%.
   mixes with urban and fireworks at night.
 - Folders are topics, not set-ups, so "recall" against them is expected to be low at 0.80.
 
+## Measured: a small local model for scene order (no script)
+
+Without a script the scenes come in timecode order, and a language model may be asked once to
+reorder them (`assembly/llm.py`). When no server answers, the image's `llama-server` is started
+for that one call if a GGUF model is in `<data>/models/assembly/` (or `VSE_ASSEMBLY_LLM_MODEL`).
+Tested in the container on the three-scene rough cut, all 6 shuffled orders, scene ids hidden
+behind random letters (with the ids visible, models just sorted the labels):
+
+| Model (Q4_K_M) | Size | Right order | Per call (4 CPU cores) |
+|---|---|---|---|
+| Qwen2.5 0.5B Instruct | 0.5 GB | 1 of 6 | 2 s |
+| Qwen2.5 1.5B Instruct | 1.1 GB | 3 of 6 | 5 s |
+| Qwen2.5 3B Instruct | 1.9 GB | 3 of 6 | 9 s |
+
+Models this small mostly hand the order back as given, so no model is shipped or required and
+timecode order stays the default (usually right for footage shot in story order). Worth trying
+on the PC: the 7B model the editing assistant already downloads (`LLM_BASE_URL` /
+`VSE_ASSEMBLY_LLM_URL` pointing at its server), with `VSE_ASSEMBLY_LLM_GPU_LAYERS=99` on the
+RTX 3050. Not measured here.
+
 ## GPU
 
 faster-whisper runs on CUDA (float16) when ctranslate2 sees an NVIDIA card, and drops to the
