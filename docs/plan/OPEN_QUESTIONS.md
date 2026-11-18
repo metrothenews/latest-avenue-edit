@@ -29,3 +29,6 @@ for the stable hostname; the PC on 24/7 with an offline contingency.
 10. **Monthly cloud budget cap.** How much, before cloud workers pause?
 11. **Beta size.** How many users in the first multi-user beta (P1)?
 12. **Pricing model.** Free, subscription, pay per use (e.g. GPU time), or something else?
+13. **One source of truth?** Should the private production repos (`latest-avenue-production`,
+    `latest-avenue-edit-production`) become the single source of truth, attached to future
+    cloud sessions, so there is no more merging between the public and private repos on the PC?

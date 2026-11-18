@@ -33,7 +33,7 @@ media, not yet on Sam's footage or the PC. See [PRODUCT.md](PRODUCT.md) for what
 
 | Phase | Step | Status |
 |---|---|---|
-| P0 | The PC as a proper test server: Docker Compose (gateway, Redis, MinIO, worker, session), auto-start, health and uptime checks, nightly backup, Cloudflare Tunnel address (DNS moved to Cloudflare), `/status` endpoint + 60 s Firestore heartbeat + offline message on the site, heavy steps on the job queue | not started |
+| P0 | The PC as a proper test server: Docker Compose (gateway, Redis, MinIO, worker, session), auto-start, health and uptime checks, nightly backup, Cloudflare Tunnel address (DNS moved to Cloudflare), `/status` endpoint + 60 s Firestore heartbeat + offline message on the site, heavy steps on the job queue; hands-off updates (GitHub Actions → GHCR `:stable` → updater with health check and rollback; site deployed to Firebase Hosting on merge to `main`; owner-only admin API) | not started |
 | P1 | Beta for several users on the PC: invite list, per-user storage and quotas, session limit and waiting room, admin view | not started |
 | P2 | PC plus cloud: cloud GPU worker pool (Google Cloud), storage on GCS, budget caps | not started |
 | P3 | Scale: autoscaled workers and session computers, gateway on Cloud Run, monitoring, metering and billing | not started |

@@ -52,6 +52,24 @@ There is one Docker image. Its configuration decides which of the roles below it
 | **P2** | PC plus cloud | A pool of cloud GPU workers using the same image, on Google Cloud (e.g. L4 GPU VMs or Cloud Run GPU), because the site is already on Firebase/Google. It takes jobs when the PC is busy or offline. Storage moves to GCS. Budget caps. The PC becomes optional. |
 | **P3** | Scale | Workers added or removed by how many jobs are waiting, down to zero when idle. Cloud session computers. The gateway on Cloud Run. Monitoring and alerts. Usage metering (GPU-seconds) and billing (e.g. Stripe). Status shown in `/edit`. |
 
+## Hands-off PC (decided by Sam, part of P0)
+
+After a one-time setup, nobody touches the PC. Updates, merges and deploys all happen from
+Sam's Mac or the cloud, and no Claude sessions run on the PC.
+
+- **Editor updates.** GitHub Actions builds and tests the editor image and pushes it to a
+  private registry (GHCR). An updater on the PC:
+  - pulls the new `:stable` image;
+  - restarts the services and health-checks them;
+  - rolls back by itself if a check fails.
+- **Website.** It deploys to Firebase Hosting from GitHub Actions when changes are merged to
+  `main`.
+- **Seeing the PC from elsewhere.**
+  - `/status`;
+  - an admin API only the owner can use (logs, queue, restart);
+  - the Firestore heartbeat, which reports the running version.
+- **Secrets** stay only in a local env file on the PC.
+
 ## When things go wrong
 
 - **The PC goes offline.** The gateway marks the `pc` pool as down. Jobs wait, or go to
