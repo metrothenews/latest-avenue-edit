@@ -161,13 +161,20 @@ def _assembly_result(entry):
     return editing_script.summary(editing_script.load(entry["output"]))
 
 
-def _start_job(kind, args, log, output, on_done=None):
-    """Run a command of the assembly's own Python in the background. -> job descriptor."""
+def _start_job(kind, args, log, output, on_done=None, env_extra=None, stdout=None):
+    """Run a command of the assembly's own Python in the background. -> job descriptor.
+
+    env_extra: secrets (an access token) go to the child's environment, never its arguments.
+    stdout: file for the command's JSON result.
+    """
     job = uuid.uuid4().hex[:8]
     env = dict(os.environ, PYTHONPATH=MODULES_DIR + os.pathsep + os.environ.get("PYTHONPATH", ""),
-               PYTHONUNBUFFERED="1")
+               PYTHONUNBUFFERED="1", **(env_extra or {}))
     fh = open(log, "w", encoding="utf-8")
-    proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=fh, env=env)
+    out = open(stdout, "w", encoding="utf-8") if stdout else subprocess.DEVNULL
+    proc = subprocess.Popen(args, stdout=out, stderr=fh, env=env)
+    if stdout:
+        out.close()
     _jobs[job] = {"kind": kind, "proc": proc, "log": log, "output": output,
                   "started": time.time(), "fh": fh, "on_done": on_done, "result": None}
     return {"job": job, "kind": kind, "output": output, "log": log}
@@ -386,3 +393,54 @@ def export_sequence(filepath: str, output: str,
         last = (proc.stderr.strip().splitlines() or ["export failed"])[-1]
         raise api.APIError("Sequence export failed: " + last)
     return json.loads(proc.stdout)
+
+
+# -----------------------------------------------------------------------------
+# Google Drive.
+
+def _json_result(entry):
+    with open(entry["output"], encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+@tool(mutates=False)
+def fetch_drive_folder(folder_id: str, access_token: str, dest: typing.Optional[str] = None) -> dict:
+    """Download a Google Drive folder (with subfolders) into the media folder, in the background.
+
+    Footage, photos, audio and PDFs are fetched; Google Docs come down as PDF. Files already
+    there are skipped. Poll with job_status; its result lists the files.
+    :arg folder_id: The folder's id (the last part of its drive.google.com address).
+    :arg access_token: A Google OAuth access token with drive.readonly. Used for this job only, not stored.
+    :arg dest: Local folder (default: drive/<folder_id> in the media folder).
+    """
+    folder_id = folder_id.strip().rstrip("/").rsplit("/", 1)[-1].split("?")[0]
+    out = _out_path(dest or os.path.join("drive", folder_id))
+    os.makedirs(out, exist_ok=True)
+    meta = os.path.join(out, ".drive")
+    os.makedirs(meta, exist_ok=True)
+    args = [_python(), "-m", "vse_standalone.assembly.drive", "fetch", folder_id, out]
+    return _start_job("fetch_drive_folder", args, os.path.join(meta, "fetch.log"),
+                      os.path.join(meta, "fetch.json"), _json_result,
+                      env_extra={"GOOGLE_ACCESS_TOKEN": access_token},
+                      stdout=os.path.join(meta, "fetch.json"))
+
+
+@tool(mutates=False)
+def upload_to_drive(filepath: str, folder_id: str, access_token: str,
+                    name: typing.Optional[str] = None) -> dict:
+    """Upload a file (a render, an exported sequence, an editing script) into a Google Drive
+    folder, in the background. Poll with job_status.
+
+    :arg access_token: A Google OAuth access token with drive.file. Used for this job only, not stored.
+    """
+    path = _path(filepath)
+    meta = os.path.join(os.path.dirname(path), ".drive")
+    os.makedirs(meta, exist_ok=True)
+    stem = os.path.basename(path)
+    args = [_python(), "-m", "vse_standalone.assembly.drive", "upload", path, folder_id]
+    if name:
+        args += ["--name", name]
+    return _start_job("upload_to_drive", args, os.path.join(meta, stem + ".upload.log"),
+                      os.path.join(meta, stem + ".upload.json"), _json_result,
+                      env_extra={"GOOGLE_ACCESS_TOKEN": access_token},
+                      stdout=os.path.join(meta, stem + ".upload.json"))

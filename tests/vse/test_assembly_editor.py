@@ -37,13 +37,14 @@ def main():
     names = {t["name"] for t in api.describe()}
     wanted = {"probe_media", "read_screenplay", "assembly_status", "start_assembly", "assembly_job",
               "get_editing_script", "edit_editing_script", "choose_take", "set_line_cut",
-              "lay_out_editing_script", "render_editing_script"}
+              "lay_out_editing_script", "render_editing_script", "job_status", "export_sequence",
+              "fetch_drive_folder", "upload_to_drive"}
     check("assembly tools are registered", wanted <= names, wanted - names)
 
     s = api.call("read_screenplay", {"filepath": os.path.join(samples, "script.pdf")})
     check("read_screenplay in the editor's Python", s["dialogue_lines"] == 6, s["dialogue_lines"])
     p = api.call("probe_media", {"filepath": os.path.join(samples, "media")})
-    check("probe_media on a folder", len(p["files"]) == 8, len(p["files"]))
+    check("probe_media on a folder", len(p["files"]) == len([f for f in os.listdir(os.path.join(samples, "media")) if not f.startswith(".")]), len(p["files"]))
 
     lines = api.call("get_editing_script", {"filepath": doc_path, "format": "lines"})["lines"]
     with_cut = [l for l in lines if l["cut"]]
@@ -86,6 +87,11 @@ def main():
     swapped = next(s for s in pics if s.get("editing_script_line") == line["id"])
     check("swapped take is on the timeline", line["takes"][1]["clip"] in swapped.name, swapped.name)
     api.call("choose_take", {"filepath": doc_path, "line": line["id"], "take": 0})
+
+    if os.environ.get("VSE_ASSEMBLY_PYTHON"):
+        seq = os.path.join(tempfile.mkdtemp(), "cut.fcpxml")
+        r = api.call("export_sequence", {"filepath": doc_path, "output": seq})
+        check("export_sequence from the editor", r["events"] == len(with_cut) and os.path.exists(seq), r)
 
     out = os.path.join(tempfile.mkdtemp(), "frame.png")
     r = api.call("render_frame", {"frame": 30, "filepath": out})
