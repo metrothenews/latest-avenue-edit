@@ -243,6 +243,16 @@ def test_full(samples, model, lines):
         check("export: source times are in the clip's own timecode",
               abs(first.source_range.start_time.to_seconds() - (m["timecode_seconds"] + ev["in"])) < 0.05)
         check_sequence_files(os.path.join(samples, "export"), doc.get("fps") or 24, "dialogue")
+        exp = os.path.join(samples, "export")
+        edl_first = next(l for l in open(os.path.join(exp, "cut.edl")) if l[:3].isdigit()).split()
+        import re as _re
+        seq = _re.search(r"<sequence[^>]*>", open(os.path.join(exp, "cut.fcpxml")).read()).group(0)
+        xml_tc = _re.search(r"<timecode>.*?<string>([^<]+)</string>", open(os.path.join(exp, "cut.xml")).read(), _re.S)
+        otio_start = otio.adapters.read_from_file(os.path.join(exp, "cut.otio")).global_start_time
+        check("exports start at 01:00:00:00 (EDL, FCPXML, FCP 7 XML, OTIO)",
+              edl_first[-2] == "01:00:00:00" and 'tcStart="3600/1s"' in seq
+              and xml_tc and xml_tc.group(1) == "01:00:00:00" and abs(otio_start.to_seconds() - 3600) < 1e-6,
+              (edl_first[-2:], seq, xml_tc and xml_tc.group(1), otio_start))
 
     out = os.path.join(samples, "cut.mp4")
     result = render.render(doc, out)

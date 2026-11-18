@@ -47,7 +47,47 @@ def _reel(name, used):
     return reel
 
 
-def timeline(doc, start_timecode=3600.0):
+START_TIMECODE = 3600.0          # seconds: sequences start at 01:00:00:00
+
+
+def _fcpxml_start(path, seconds):
+    import re as _re
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    start = "{:d}/1s".format(int(round(seconds)))
+    text = _re.sub(r"<sequence(?![^>]*tcStart)", '<sequence tcStart="{:s}" tcFormat="NDF"'.format(start), text)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+
+
+def _edl_record_offset(path, frames, rate):
+    """Shift every event's record in/out (the last two timecodes) by `frames`."""
+    import re as _re
+    fps = int(round(rate))
+
+    def tc_to(n):
+        f = n % fps
+        s = n // fps
+        return "{:02d}:{:02d}:{:02d}:{:02d}".format(s // 3600, s // 60 % 60, s % 60, f)
+
+    def tc_from(t):
+        h, m, sec, f = (int(x) for x in _re.split(r"[:;]", t))
+        return ((h * 60 + m) * 60 + sec) * fps + f
+
+    out = []
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            m = _re.match(r"^(\d{3,4}\s.*?)(\d\d:\d\d:\d\d[:;]\d\d)(\s+)(\d\d:\d\d:\d\d[:;]\d\d)(\s*)$",
+                          line.rstrip("\n"))
+            if m:
+                line = "{:s}{:s}{:s}{:s}{:s}\n".format(m.group(1), tc_to(tc_from(m.group(2)) + frames), m.group(3),
+                                                     tc_to(tc_from(m.group(4)) + frames), m.group(5))
+            out.append(line)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.writelines(out)
+
+
+def timeline(doc, start_timecode=START_TIMECODE):
     """Editing script -> opentimelineio.schema.Timeline."""
     import opentimelineio as otio
     rate = float(doc.get("fps") or 24)
@@ -124,6 +164,13 @@ def export(doc, output, fmt=None):
         tl.tracks[:] = [t for t in tl.tracks if t.kind == otio.schema.TrackKind.Video]
     os.makedirs(os.path.dirname(os.path.abspath(output)), exist_ok=True)
     otio.adapters.write_to_file(tl, output, adapter_name=adapter)
+    # Sequences start at 01:00:00:00, the usual convention (OTIO and FCP 7 XML carry the
+    # timeline's start already; the FCPXML and CMX 3600 adapters don't).
+    rate = float(doc.get("fps") or 24)
+    if fmt == "fcpxml":
+        _fcpxml_start(output, START_TIMECODE)
+    elif fmt == "edl":
+        _edl_record_offset(output, int(round(START_TIMECODE * rate)), rate)
     return {"filepath": os.path.abspath(output), "format": fmt,
             "events": sum(1 for c in tl.tracks[0] if isinstance(c, otio.schema.Clip)),
             "duration": round(tl.duration().to_seconds(), 3)}
