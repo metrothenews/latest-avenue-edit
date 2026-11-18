@@ -515,13 +515,16 @@ def apply_text(doc, text):
             old_sid, old = old_elements[assigned[fi]]
             carried = copy.deepcopy(old)
             carried["text"] = el["text"]
+            if "spoken" in carried:
+                carried["spoken"] = screenplay.spoken(el["text"])
             for key in ("parentheticals", "extensions"):
                 if key in el:
                     carried[key] = el[key]
-            if el["type"] == "dialogue" and _match.tokens(el["text"]) != _match.tokens(old["text"]):
+            if el["type"] == "dialogue" and _match.tokens(screenplay.spoken(el["text"])) != \
+                    _match.tokens(old.get("spoken") or old["text"]):
                 takes = []
                 for t in old.get("takes", []):
-                    nt = _retrim(new_doc, t, el["text"])
+                    nt = _retrim(new_doc, t, carried.get("spoken") or el["text"])
                     if nt is not None:
                         takes.append(nt)
                 chosen = old["takes"][old["take"]]["clip"] if old.get("take") is not None else None

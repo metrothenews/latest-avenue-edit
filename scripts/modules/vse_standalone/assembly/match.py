@@ -83,7 +83,7 @@ class ScriptIndex:
         self.scene_vocab = collections.defaultdict(collections.Counter)
         doc_freq = collections.Counter()
         for li, line in enumerate(lines):
-            toks = tokens(line["text"])
+            toks = tokens(line.get("spoken") or line["text"])
             self.line_tokens.append(toks)
             self.scene_of_line.append(line["scene"])
             for pi, t in enumerate(toks):

@@ -100,8 +100,87 @@ def _cue_parts(line):
     return name, extensions
 
 
+NUMBERED = re.compile(r"^\s*(\d{1,3})[.)]\s+(.*)$")
+SCRIPT_TITLE = re.compile(r"^\s*((?:ad\s+)?script|spot|version|option|v)\s*#?\s*(\d+)\s*:?\s*$", re.I)
+VISUAL_WORDS = {"logo", "icon", "art", "cover", "graphic", "image", "photo", "screenshot",
+                "text", "overlay", "card", "b-roll", "broll", "cutaway"}
+
+
+def spoken(text):
+    """What is said aloud: bracketed visual cues reduced to the words that are spoken
+    ("on [Spotify Logo]" -> "on Spotify")."""
+    def keep(m):
+        return " ".join(w for w in m.group(1).split() if w.lower().strip(",.") not in VISUAL_WORDS)
+    return re.sub(r"\s+", " ", re.sub(r"\[([^\]]*)\]", keep, text)).strip()
+
+
+def looks_numbered(text):
+    """Ad and social scripts: numbered lines, one per shot or caption, no scene headings."""
+    lines = [l for l in text.splitlines() if l.strip()]
+    numbered = sum(1 for l in lines if NUMBERED.match(l))
+    headings = sum(1 for l in lines if HEADING.match(l.strip()) and _is_upper(l.strip().split(" - ")[0]))
+    return numbered >= 4 and numbered >= 0.4 * len(lines) and headings == 0
+
+
+def parse_numbered(text, source=None, speaker="NARRATOR"):
+    """Numbered monologue scripts (ads, social content, voice-over): each "Script N:" block is
+    a scene, each numbered line a spoken line, a line that is only [brackets] (an end card,
+    a logo) a visual. Unnumbered lines continue the line above."""
+    scenes, preamble, current, item = [], [], None, None
+
+    def scene(title):
+        sc = {"id": "S{:d}".format(len(scenes) + 1), "number": None, "heading": title,
+              "int_ext": None, "location": title, "time": None, "elements": []}
+        scenes.append(sc)
+        return sc
+
+    for raw in text.replace("\f", "\n").splitlines():
+        line = raw.strip().replace("\u200b", "")
+        if not line:
+            item = None if item and item["type"] == "dialogue" else item
+            continue
+        m_title = SCRIPT_TITLE.match(line)
+        if m_title:
+            current, item = scene(line.rstrip(":").strip()), None
+            continue
+        m = NUMBERED.match(line)
+        if m:
+            if current is None:
+                current = scene("SCRIPT 1")
+            body = m.group(2).strip()
+            # A numbered item that opens with [brackets] is a picture: an end card, a logo,
+            # a graphic (with its on-screen text), not something said.
+            visual = body.startswith("[")
+            item = {"id": "{:s}-{:d}".format(current["id"], len(current["elements"]) + 1),
+                    "number": int(m.group(1))}
+            if visual:
+                item.update(type="action", text=body)
+            else:
+                item.update(type="dialogue", character=speaker, extensions=[], parentheticals=[],
+                            text=body, spoken=spoken(body))
+            current["elements"].append(item)
+        elif item is not None:
+            item["text"] = (item["text"] + " " + line).strip()
+            if item["type"] == "dialogue":
+                item["spoken"] = spoken(item["text"])
+        elif current is None:
+            preamble.append(line)
+        else:
+            current["elements"].append({"id": "{:s}-{:d}".format(current["id"], len(current["elements"]) + 1),
+                                        "type": "action", "text": line})
+    return {"source": os.path.abspath(source) if source else None,
+            "title": preamble[0] if preamble else None, "title_page": preamble,
+            "format": "numbered",
+            "characters": [{"name": speaker, "lines": sum(
+                1 for sc in scenes for e in sc["elements"] if e["type"] == "dialogue")}],
+            "scenes": scenes}
+
+
 def parse_text(text, source=None):
-    """Screenplay text (pdftotext -layout output, Fountain or plain) -> script dict."""
+    """Screenplay text (pdftotext -layout output, Fountain or plain) -> script dict.
+    Numbered ad/social scripts are recognised and read by :func:`parse_numbered`."""
+    if looks_numbered(text):
+        return parse_numbered(text, source)
     lines = _clean_lines(text)
     base = _action_column(lines)
     flat = all(_indent(l) - base < 6 for l in lines if l.strip())
@@ -217,6 +296,7 @@ def parse_text(text, source=None):
         "title_page": preamble,
         "characters": [{"name": n, "lines": c} for n, c in characters.most_common()],
         "scenes": scenes,
+        "format": "screenplay",
     }
 
 

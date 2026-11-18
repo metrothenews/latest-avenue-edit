@@ -71,6 +71,18 @@ def test_rules(samples):
     check("flat text: scene heading parts", (s["scenes"][0]["int_ext"], s["scenes"][0]["location"],
                                              s["scenes"][0]["time"]) == ("INT", "KITCHEN", "DAY"))
 
+    numbered = ("Ad Script 1:\n\n1. if you like late night drives\n\n2. on [Radio Logo]\n\n"
+                "3. this one is for you\n4. I make music in my bedroom\n\n5. press play\n\n"
+                "6. [End Card]\nout now\non [Radio Logo]\n\nAd Script 2:\n\n1. you drive at night\n\n"
+                "2. on [Radio Logo]\n\n3. this is for you\n\n4. press play\n")
+    s = screenplay.parse_text(numbered)
+    els = s["scenes"][0]["elements"]
+    check("numbered script: recognised, one scene per script", s["format"] == "numbered"
+          and [sc["heading"] for sc in s["scenes"]] == ["Ad Script 1", "Ad Script 2"], s["format"])
+    check("numbered script: spoken lines and the end card", [e["type"] for e in els] ==
+          ["dialogue"] * 5 + ["action"] and els[5]["text"].endswith("on [Radio Logo]"), [e["type"] for e in els])
+    check("numbered script: brackets reduced to what is said", els[1]["spoken"] == "on Radio", els[1])
+
     pdf = os.path.join(samples, "script.pdf")
     s = screenplay.parse(pdf)
     lines = screenplay.dialogue_lines(s)
