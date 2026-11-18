@@ -201,6 +201,30 @@ def test_full(samples, model, lines):
 
     test_no_script(samples, model)
 
+    try:
+        import opentimelineio as otio
+        from vse_standalone.assembly import export
+    except ImportError:
+        otio = None
+        check("opentimelineio installed (sequence export)", False)
+    if otio:
+        n_events = len(editing_script.timeline(doc))
+        for fmt, ext in (("otio", ".otio"), ("fcpxml", ".fcpxml"), ("xml", ".xml"), ("edl", ".edl")):
+            path = os.path.join(samples, "export", "cut" + ext)
+            r = export.export(doc, path)
+            back = otio.adapters.read_from_file(path)
+            vtrack = next(t for t in back.tracks if t.kind == otio.schema.TrackKind.Video)
+            clips = [c for c in vtrack if isinstance(c, otio.schema.Clip)]
+            check("export {:s}: reads back with every event at the right length".format(fmt),
+                  len(clips) == n_events and abs(back.duration().to_seconds() - r["duration"]) < 0.1,
+                  (len(clips), n_events, back.duration().to_seconds(), r["duration"]))
+        tl = export.timeline(doc)
+        first = next(c for c in tl.tracks[0] if isinstance(c, otio.schema.Clip))
+        m = next(m for m in doc["media"].values() if m["name"] == first.name)
+        ev = editing_script.timeline(doc)[0]
+        check("export: source times are in the clip's own timecode",
+              abs(first.source_range.start_time.to_seconds() - (m["timecode_seconds"] + ev["in"])) < 0.05)
+
     out = os.path.join(samples, "cut.mp4")
     result = render.render(doc, out)
     probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of",

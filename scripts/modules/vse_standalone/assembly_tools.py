@@ -364,3 +364,25 @@ def render_editing_script(filepath: str, output: str, width: typing.Optional[int
         return render.render(doc, out, width=width, height=height)
     except (RuntimeError, ValueError) as ex:
         raise api.APIError(str(ex)) from None
+
+
+@tool(mutates=False)
+def export_sequence(filepath: str, output: str,
+                    format: typing.Optional[typing.Literal["otio", "fcpxml", "xml", "edl"]] = None) -> dict:
+    """Export the editing script as a sequence for another editor (OpenTimelineIO).
+
+    :arg output: .otio (Resolve, OTIO), .fcpxml (Final Cut Pro, Resolve), .xml (FCP 7 XML:
+      Premiere Pro, Resolve) or .edl (CMX 3600, picture only).
+    :arg format: Overrides the format chosen from the file extension.
+    """
+    path, _doc = _load(filepath)
+    out = _out_path(output)
+    args = [_python(), "-m", "vse_standalone.assembly", "export", path, "-o", out]
+    if format:
+        args += ["--format", format]
+    env = dict(os.environ, PYTHONPATH=MODULES_DIR + os.pathsep + os.environ.get("PYTHONPATH", ""))
+    proc = subprocess.run(args, capture_output=True, text=True, env=env, timeout=300)
+    if proc.returncode != 0:
+        last = (proc.stderr.strip().splitlines() or ["export failed"])[-1]
+        raise api.APIError("Sequence export failed: " + last)
+    return json.loads(proc.stdout)

@@ -10,3 +10,8 @@ pillow
 # Optional, for MobileCLIP2-S0 picture grouping (else a model-free colour signature is used).
 # Install torch from the CPU index above first: the default PyPI wheel carries CUDA (~5 GB).
 open_clip_torch>=3.2
+# Sequence export for DaVinci Resolve, Premiere Pro and Final Cut Pro.
+opentimelineio>=0.17
+otio-fcpx-xml-adapter
+otio-fcp-adapter
+otio-cmx3600-adapter

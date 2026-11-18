@@ -13,6 +13,7 @@ Command line for the assembly (also what the editor's tools run in the assembly'
     python -m vse_standalone.assembly take cut.edit.json LINE_ID INDEX
     python -m vse_standalone.assembly summary cut.edit.json
     python -m vse_standalone.assembly render cut.edit.json -o cut.mp4
+    python -m vse_standalone.assembly export cut.edit.json -o cut.fcpxml   (.otio .fcpxml .xml .edl)
 
 ``tools/vse_assembly/assemble.py`` is the same with the path set up.
 """
@@ -79,6 +80,11 @@ def main(argv=None):
     p.add_argument("--width", type=int)
     p.add_argument("--height", type=int)
 
+    p = sub.add_parser("export", help="sequence for Resolve / Premiere / Final Cut (OpenTimelineIO)")
+    p.add_argument("doc")
+    p.add_argument("-o", "--output", required=True, help=".otio, .fcpxml, .xml (FCP7/Premiere) or .edl")
+    p.add_argument("--format", choices=("otio", "fcpxml", "xml", "edl"))
+
     args = parser.parse_args(argv)
     log = lambda text: print(text, file=sys.stderr)  # noqa: E731
 
@@ -124,6 +130,9 @@ def main(argv=None):
         _print(editing_script.summary(editing_script.load(args.doc)))
     elif args.cmd == "timeline":
         _print(editing_script.timeline(editing_script.load(args.doc)))
+    elif args.cmd == "export":
+        from . import export
+        _print(export.export(editing_script.load(args.doc), args.output, args.format))
     elif args.cmd == "render":
         from . import render
         _print(render.render(editing_script.load(args.doc), args.output,
