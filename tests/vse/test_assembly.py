@@ -242,6 +242,7 @@ def test_full(samples, model, lines):
         ev = editing_script.timeline(doc)[0]
         check("export: source times are in the clip's own timecode",
               abs(first.source_range.start_time.to_seconds() - (m["timecode_seconds"] + ev["in"])) < 0.05)
+        check_sequence_files(os.path.join(samples, "export"), doc.get("fps") or 24, "dialogue")
 
     out = os.path.join(samples, "cut.mp4")
     result = render.render(doc, out)
@@ -276,6 +277,43 @@ def _drums(path, bpm, seconds=20.0, start=0.37, sr=22050):
         w.setframerate(sr)
         w.writeframes((x * 32767).astype("<i2").tobytes())
     return times
+
+
+def check_sequence_files(folder, fps, what, stem="cut"):
+    """The exported sequences follow their formats' rules (and Apple's DTD, when it can be
+    fetched), and the checkers do catch broken files."""
+    import re as _re
+    from vse_standalone.assembly import check_exports as ce
+    dtd = ce.fetch_fcpxml_dtd("1.8", os.path.join(os.path.expanduser("~"), ".cache", "fcpxml-dtd"))
+    if not dtd:
+        print("note: Apple's FCPXML DTD could not be fetched (offline?); checking the rules only")
+    fcpxml, xml, edl = (os.path.join(folder, stem + e) for e in (".fcpxml", ".xml", ".edl"))
+    p = ce.check_fcpxml(fcpxml, dtd)
+    check("{:s} FCPXML is valid{:s}".format(what, " against Apple's DTD" if dtd else ""), not p, p[:5])
+    p = ce.check_fcp7_xml(xml)
+    check("{:s} FCP 7 XML (Premiere) has a valid structure and timing".format(what), not p, p[:5])
+    p = ce.check_edl(edl, fps)
+    check("{:s} EDL follows CMX 3600".format(what), not p, p[:5])
+    if what != "dialogue":
+        return
+    # The checkers must fail on broken files.
+    broken = os.path.join(folder, "broken")
+    os.makedirs(broken, exist_ok=True)
+    text = open(edl).read()
+    lines = text.splitlines()
+    k = next(i for i, l in enumerate(lines) if _re.match(r"^\d{3}\s", l))
+    parts = lines[k].split()
+    parts[-3] = "00:00:00:30"                     # bad timecode
+    lines[k] = "  ".join(parts)
+    open(os.path.join(broken, "b.edl"), "w").write("\n".join(lines) + "\n")
+    x = open(xml).read()
+    x = _re.sub(r"<end>(\d+)</end>", lambda m: "<end>{:d}</end>".format(int(m.group(1)) + 5), x, count=1)
+    open(os.path.join(broken, "b.xml"), "w").write(x)
+    f = open(fcpxml).read().replace('ref="r2"', 'ref="r999"', 1)
+    open(os.path.join(broken, "b.fcpxml"), "w").write(f)
+    check("checkers catch a broken EDL, FCP 7 XML and FCPXML",
+          ce.check_edl(os.path.join(broken, "b.edl"), fps) and ce.check_fcp7_xml(os.path.join(broken, "b.xml"))
+          and ce.check_fcpxml(os.path.join(broken, "b.fcpxml"), dtd))
 
 
 def test_music(samples):
@@ -325,6 +363,13 @@ def test_music(samples):
                           out], capture_output=True, text=True).stdout.strip()
     want = 16.0 if song_truth else 20.0
     check("music: render is the song's length", got and abs(float(got) - want) < 0.3, got)
+    try:
+        from vse_standalone.assembly import export
+        for ext in (".fcpxml", ".xml", ".edl"):
+            export.export(doc, os.path.join(samples, "export_music", "mv" + ext))
+        check_sequence_files(os.path.join(samples, "export_music"), doc.get("fps") or 24, "music", "mv")
+    except ImportError:
+        pass
 
 
 def test_no_script(samples, model):
