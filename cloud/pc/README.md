@@ -63,6 +63,84 @@ strict proxies and firewalls (seen in testing); if a model download ever stalls 
 (`docker exec latest-avenue-edit env | findstr HF_HUB`). To make a fake shoot to look at:
 `python tests/vse/assembly/make_samples.py shoot --tiny` (needs ffmpeg and espeak-ng).
 
+## Put the new version live (assembly pipeline)
+
+Do this after the Docker test above ends with **All tests passed**. It replaces the running
+editor; your data folder (projects, media, renders, models) is kept. About 20-30 minutes the
+first time (the image gains ffmpeg, the speech and picture models' Python packages and the
+CUDA libraries), a few minutes later.
+
+**1. Keep the current version for rollback.** In PowerShell:
+
+```powershell
+docker tag latest-avenue-edit:local latest-avenue-edit:previous
+cd $env:USERPROFILE\latest-avenue-edit          # the checkout install.ps1 was run from
+git status                                       # must say "nothing to commit"
+git rev-parse HEAD > $env:USERPROFILE\la-edit-previous-commit.txt
+```
+
+**2. Bring in the new code.** This checkout follows the private production repository
+(`origin`), with the public one as a second remote. Merge the branch into the production
+`main` rather than switching to it, so what is only in production (for example
+`cloud/drive.py`) is kept:
+
+```powershell
+git remote -v                                    # find the public repository's remote name
+git fetch <public-remote> claude/assembly-pipeline
+git checkout main
+git merge --no-edit <public-remote>/claude/assembly-pipeline
+```
+
+If the merge reports conflicts, stop: run `git merge --abort` (nothing has changed) and send
+the conflict list (`git status`) to whoever is building this. Don't resolve them by guessing:
+both sides changed the same cloud files.
+
+**3. Install.** `-NoPull` because the code is already there:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File cloud\pc\install.ps1 -NoPull
+```
+
+Expected, in order:
+
+- `Finding the editor's Linux build` then `Using ...latest-avenue-video-linux-x64.tar.xz`
+- `NVIDIA graphics card: yes, transcription will use it`
+- `Building the image` (the long part; `ERROR` lines about torch mean the PyTorch download
+  site was unreachable: the build continues without the picture model, see step 4)
+- `Starting the server`, then `The gateway is running on this PC (port 8080, N cores, graphics card).`
+- `Graphics cards the transcription sees inside the container: 1`. If it says
+  `Docker could not give the container the graphics card`, the editor still works, on the
+  processor; update the NVIDIA driver and Docker Desktop, then run step 3 again.
+- the Tailscale Funnel address (unchanged) and `Done.`
+
+**4. Check it.**
+
+```powershell
+curl.exe -s http://127.0.0.1:8080/healthz
+docker exec latest-avenue-edit /opt/assembly-env/bin/python -c "import faster_whisper, rapidfuzz, opentimelineio; print('assembly ok')"
+docker exec latest-avenue-edit /opt/assembly-env/bin/python -c "import open_clip, torch; print('picture model ok')"
+docker exec latest-avenue-edit /opt/assembly-env/bin/python -c "import ctranslate2; print('GPUs:', ctranslate2.get_cuda_device_count())"
+```
+
+`healthz` answers `ok`; the next three print `assembly ok`, `picture model ok` and `GPUs: 1`. If
+`picture model` fails, grouping falls back to colours, which is weak on real footage
+(doc/vse/assembly_workflow.md): rebuild (step 3) when download.pytorch.org is reachable.
+Then open latestavenue.com/edit, sign in, and run an assembly: the first one downloads the
+speech model (about 480 MB) into `<data>\models\hf`, later ones start at once.
+
+**Roll back** (back to exactly what ran before, data kept):
+
+```powershell
+docker rm -f latest-avenue-edit
+docker tag latest-avenue-edit:previous latest-avenue-edit:local
+git reset --hard (Get-Content $env:USERPROFILE\la-edit-previous-commit.txt)
+powershell -ExecutionPolicy Bypass -File cloud\pc\install.ps1 -NoPull
+```
+
+The rebuild in the last line reuses Docker's cached layers of the old version, so it is
+quick. Projects saved by the new version keep working in the old one; editing scripts
+(`*.edit.json`) and exported sequences are ordinary files the old version ignores.
+
 ## What runs on the PC
 
 The same container as the cloud version (see [../README.md](../README.md)), in Docker
