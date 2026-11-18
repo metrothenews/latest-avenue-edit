@@ -28,3 +28,12 @@ media, not yet on Sam's footage or the PC. See [PRODUCT.md](PRODUCT.md) for what
 | 15 | LoRA fine-tuning of recognition models, only if base models miss on Sam's footage | not started — only if needed |
 | 16 | Run on Sam's real clips, on the PC with the GPU, and on Windows | in progress (grouping measured on 71 real clips in the container; PC and GPU not run) |
 | 17 | Go live: update the PC, deploy the site, real sign-in ([GO_LIVE.md](GO_LIVE.md)) | not started |
+
+## Online service ([SCALING.md](SCALING.md))
+
+| Phase | Step | Status |
+|---|---|---|
+| P0 | The PC as a proper test server: Docker Compose (gateway, Redis, MinIO, worker, session), auto-start, health and uptime checks, nightly backup, Cloudflare Tunnel address, heavy steps on the job queue | not started |
+| P1 | Beta for several users on the PC: invite list, per-user storage and quotas, session limit and waiting room, admin view | not started |
+| P2 | PC plus cloud: cloud GPU worker pool (Google Cloud), storage on GCS, budget caps | not started |
+| P3 | Scale: autoscaled workers and session computers, gateway on Cloud Run, monitoring, metering and billing | not started |

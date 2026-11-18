@@ -4,7 +4,8 @@ Read this first. It describes what latest avenue video is being built into, from
 handwritten plan. Build order is in [ROADMAP.md](ROADMAP.md), current state in
 [STATUS.md](STATUS.md), guesses made along the way in [DECISIONS.md](DECISIONS.md), and
 questions only Sam can answer in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md), and
-the steps to put it live in [GO_LIVE.md](GO_LIVE.md).
+the steps to put it live in [GO_LIVE.md](GO_LIVE.md). How it grows into an online
+service is in [SCALING.md](SCALING.md).
 
 ## In one paragraph
 
@@ -25,6 +26,9 @@ out, ready for quick crop / colour in the game view and then fine editing the no
   dialogue-driven and music-driven edits.
 - **Runs on** Sam's Windows PC with an NVIDIA RTX graphics card: CUDA when available, CPU
   fallback.
+- **An online service, not an installed app** (Sam, 2026-11-18). Sam's PC is the test server
+  for now. It is built so cloud workers and session computers can be added as users
+  arrive. See [SCALING.md](SCALING.md).
 - **Sam's media is never committed** to the repository.
 
 ## Principles

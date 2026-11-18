@@ -25,3 +25,10 @@ behind a setting, off by default: a guess Sam may overrule, see DECISIONS.md).
 9. **Reconciling the private production repos.** Your private production repos have their
    own `cloud/drive.py` and an `/edit` Drive panel (commit `369d181`). When the PC is
    merged, which one wins, or how are they combined with the new import queue?
+10. **Domain and Cloudflare.** OK to put the service on your own domain (e.g.
+    `edit-api.latestavenue.com`) through Cloudflare Tunnel, replacing the Tailscale address?
+11. **Monthly cloud budget cap.** How much, before cloud workers pause?
+12. **Beta size.** How many users in the first multi-user beta (P1)?
+13. **Is the PC on 24/7?** This decides whether the service is reachable when the cloud pool
+    doesn't exist yet.
+14. **Pricing model.** Free, subscription, pay per use (e.g. GPU time), or something else?
