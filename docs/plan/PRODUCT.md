@@ -1,0 +1,146 @@
+# The final product
+
+Read this first. It describes what latest avenue video is being built into, from Sam's
+handwritten plan. Build order is in [ROADMAP.md](ROADMAP.md), current state in
+[STATUS.md](STATUS.md), guesses made along the way in [DECISIONS.md](DECISIONS.md), and
+questions only Sam can answer in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md).
+
+## In one paragraph
+
+Give the editor a folder of footage and audio plus the screenplay, and it produces an
+**assembly cut**: an **editing script** that reads like the screenplay, where each line is
+bound to the takes that cover it, in best-guess order, with alternative takes ready to swap.
+The user edits that document like a screenplay; the footage moves with the text. When they
+submit it, the real sequencer (the Blender-based editor in this repo) opens with the cut laid
+out, ready for quick crop / colour in the game view and then fine editing the normal way.
+
+## Principles
+
+- **Code and algorithms first.** Every step is done programmatically wherever possible.
+  The whole premise is *simple and lightweight*: not dependent on LLMs, heavily dependent on
+  code and algorithms.
+- **The LLM is a last-resort fallback.** It has **no chat feature**. It lives inside the
+  pipeline and is called only at specific points where code can't decide (for example,
+  ordering footage when no script was given). When called it uses the MCP tools
+  strategically, then hands control back.
+- **Native libraries before anything else.** ffmpeg/ffprobe do media work. The
+  Blender-based code is used only when it is time to actually sequence.
+- **Small open-source models.** Transcription and image recognition use the most
+  lightweight open-source models that do the job. Sam wrote "LoRA-based"; the plan is small
+  base models first, and LoRA fine-tuning only later if they miss on his footage.
+- **Every feature is an editor tool.** Each step is exposed as a tool (MCP bridge, and the
+  gateway's `POST /api/rpc`) so the website's `/edit` page (latest-avenue repo) can call it.
+
+## Inputs
+
+| Input | Formats | Needed? |
+|---|---|---|
+| Video and photos | Standard formats | Yes |
+| Audio | Standard formats | Yes (may be in the video files) |
+| Script | PDF | Optional (see "No script provided") |
+| Script supervisor notes | PDF | Advanced, later (see step 3) |
+
+## Workflow
+
+Each step lists what "done" means.
+
+### 1. Connect Google Drive and select the footage folder (with audio)
+
+Done when: the user signs in to Google Drive, picks a folder, and the editor has a list of
+every video, photo and audio file in it with its technical metadata (duration, frame rate,
+resolution, codec, audio channels, timecode if present), read by ffprobe.
+
+### 2. Upload or select the script (PDF)
+
+Done when: the PDF is turned into structured screenplay data (scenes with headings, action,
+character, dialogue, parentheticals, transitions), each element with a stable ID, by
+`pdftotext -layout` plus screenplay formatting rules, with no LLM.
+
+### 3. Upload or select script supervisor notes (PDF) — not built yet
+
+Not built now. Contingencies to keep in mind so it slots in later:
+
+- What the notes carry: circled takes, slate (scene/setup/take) numbers, continuity notes,
+  timing, comments per take.
+- The editing script's data reserves a place for this now (per take: slate, circled flag,
+  supervisor notes), left empty until the feature exists.
+- Rule when it is added: **a circled take wins**; otherwise the step-4 scoring decides.
+
+Done (later) when: notes are parsed into per-take records and matched to clips by slate.
+
+### 4. Assembly cut
+
+Basic image recognition and audio transcription, then an editing script that resembles the
+provided script, with several possibilities for similar takes so the user can swap them, and
+footage placed in best-guess order. Image recognition also identifies clips that are likely
+part of one sequence (same setup / scene) and cuts them together on that basis.
+
+Done when: from the command line, a footage folder plus a script PDF produce an editing
+script JSON in which every script line that was shot points to a ranked list of candidate
+takes with in/out times, unmatched footage is listed separately, and a person can check the
+result against the footage.
+
+### 5. Edit the editing script like a screenplay
+
+Done when: the user can edit the editing script as a screenplay-style document (reorder,
+delete, swap a line's take for one of its alternatives, trim), and the timeline metadata
+moves with the text.
+
+### 6. Submit: open the sequencer with the cut laid out
+
+Done when: submitting the editing script opens the Blender-based sequencer with the clips
+on the timeline in the editing script's order, with the chosen in/out points and synced audio.
+
+### 7. Optional quick crop / quick colour
+
+In the existing game-ified view (game view). Done when: the user can run crop and colour
+passes over the assembled cut in the game view.
+
+### Then
+
+The user fine-tunes the edit the traditional way and exports either a rendered video or a
+sequence (for another editor) to Google Drive. Done when both exports land in the user's
+Drive.
+
+## No script provided
+
+Transcribe the audio and use image recognition to assemble a script, then have the LLM give
+its best guess at how to reorder everything. This is one of the few places the LLM is used.
+
+## Proposed stack (to be confirmed by the builder)
+
+| Job | Proposed tool |
+|---|---|
+| Media info, audio extraction, scene detection, thumbnails, renders | ffprobe / ffmpeg |
+| Script parsing | `pdftotext -layout` + screenplay rules |
+| Word-timed transcription | faster-whisper or whisper.cpp (faster-whisper is already used in `tools/vse_lyrics/align_lyrics.py`) |
+| Matching takes to script lines | rapidfuzz + sequence alignment |
+| Grouping shots into setups / sequences | MobileCLIP or SigLIP image embeddings |
+| Editing script | JSON |
+| Sequencing | Blender (this repo's editor) only |
+| Sequence export to other editors | OpenTimelineIO (an `export_otio` tool already exists in `api.py`; it depends on the build having Blender's OTIO operator) |
+
+Research still to do: the most lightweight open-source image recognition models and
+datasets, and the same for audio transcription.
+
+## Out of scope for now
+
+- Parsing script supervisor notes (step 3): only the data slot and the rules are planned.
+- LoRA fine-tuning of the recognition models.
+- A chat interface to the LLM.
+- Automated final editing decisions beyond the assembly cut: fine editing stays with the user.
+
+## Glossary
+
+- **Take**: one recording of a shot, from "action" to "cut".
+- **Setup**: one camera position / framing; a setup is usually shot in several takes.
+- **Circled take**: a take the director marked as preferred; recorded in the script
+  supervisor's notes.
+- **Slate**: the board (or its metadata) at the start of a take giving scene, setup and take
+  numbers; used to identify clips.
+- **Editing script**: this product's central document: the screenplay with each line bound
+  to candidate takes and their timeline metadata (file, in/out, sync). Stored as JSON.
+- **Assembly cut**: the first rough cut, every scripted moment in script order using a
+  best-guess take.
+- **Sequence**: a timeline of clips in an editor; here, what the Blender sequencer shows
+  after submit, and what is exported to other editors.
