@@ -143,6 +143,27 @@ def test_full(samples, model, lines):
     check("supervisor notes slot reserved", doc["supervisor_notes"]["status"] == "reserved" and
           all("supervisor" in m for m in doc["media"].values()))
 
+    # Separate sound.
+    for name, want in truth.get("sync", {}).items():
+        cid = next(c for c, m in doc["media"].items() if m["name"] == name)
+        got = doc["media"][cid].get("sound")
+        rec = got and doc["media"][got["clip"]]["name"]
+        check("{:s} synced to {:s} by {:s}".format(name, want["audio"], want["method"]),
+              got and rec == want["audio"] and abs(got["offset"] - want["offset"]) < 0.01
+              and got["method"] == want["method"], got)
+    recorders = {s["audio"] for s in truth.get("sync", {}).values()}
+    check("recorder files are not takes of their own", not any(
+        doc["media"][t["clip"]]["name"] in recorders for sc in doc["scenes"] for el in sc["elements"]
+        for t in el.get("takes", []) if el["type"] == "dialogue"))
+    check("the voice-over is not synced to a camera clip", not any(
+        m.get("sound") and doc["media"][m["sound"]["clip"]]["name"].startswith("VO_")
+        for m in doc["media"].values()))
+    tl = editing_script.timeline(doc)
+    synced_events = [e for e in tl if doc["media"][e["clip"]].get("sound")]
+    check("synced lines play the recorder's sound", synced_events and all(
+        os.path.basename(e["sound_path"]) in recorders and e["sound_in"] > e["in"] for e in synced_events),
+        [(e["element"], e["sound_path"]) for e in synced_events])
+
     # Swap a take.
     other = 1
     editing_script.choose_take(doc, flub["id"], other)

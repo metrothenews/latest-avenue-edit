@@ -98,8 +98,9 @@ def _mobileclip():
         import torch
         torch.set_grad_enabled(False)
         model, _, preprocess = open_clip.create_model_and_transforms(MODEL, pretrained=PRETRAINED)
-        model.eval()
-        _model["m"] = (model, preprocess)
+        on = "cuda" if torch.cuda.is_available() and os.environ.get("VSE_ASSEMBLY_DEVICE") != "cpu" else "cpu"
+        model.eval().to(on)
+        _model["m"] = (model, preprocess, on)
     return _model["m"]
 
 
@@ -110,14 +111,14 @@ def embed(image_paths, backend):
         return [signature(p) for p in image_paths]
     import torch
     from PIL import Image
-    model, preprocess = _mobileclip()
+    model, preprocess, on = _mobileclip()
     out = []
     for k in range(0, len(image_paths), 32):
         batch = torch.stack([preprocess(Image.open(p).convert("RGB"))
-                             for p in image_paths[k:k + 32]])
-        feats = model.encode_image(batch)
+                             for p in image_paths[k:k + 32]]).to(on)
+        feats = model.encode_image(batch).float()
         feats = feats / feats.norm(dim=-1, keepdim=True)
-        out += [numpy.asarray(f, dtype="float32") for f in feats.numpy()]
+        out += [numpy.asarray(f, dtype="float32") for f in feats.cpu().numpy()]
     return out
 
 

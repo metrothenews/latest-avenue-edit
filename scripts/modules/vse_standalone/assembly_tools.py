@@ -154,35 +154,58 @@ def start_assembly(media_folder: str, output: str, script: typing.Optional[str] 
         args.append("--no-visual")
     if not model_order:
         args.append("--no-model-order")
+    return _start_job("assembly", args, out + ".log", out, _assembly_result)
+
+
+def _assembly_result(entry):
+    return editing_script.summary(editing_script.load(entry["output"]))
+
+
+def _start_job(kind, args, log, output, on_done=None):
+    """Run a command of the assembly's own Python in the background. -> job descriptor."""
     job = uuid.uuid4().hex[:8]
-    log = out + ".log"
-    env = dict(os.environ, PYTHONPATH=MODULES_DIR + os.pathsep + os.environ.get("PYTHONPATH", ""))
+    env = dict(os.environ, PYTHONPATH=MODULES_DIR + os.pathsep + os.environ.get("PYTHONPATH", ""),
+               PYTHONUNBUFFERED="1")
     fh = open(log, "w", encoding="utf-8")
     proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=fh, env=env)
-    _jobs[job] = {"proc": proc, "log": log, "output": out, "started": time.time(), "fh": fh}
-    return {"job": job, "output": out, "log": log}
+    _jobs[job] = {"kind": kind, "proc": proc, "log": log, "output": output,
+                  "started": time.time(), "fh": fh, "on_done": on_done, "result": None}
+    return {"job": job, "kind": kind, "output": output, "log": log}
+
+
+@tool(mutates=False)
+def job_status(job: str) -> dict:
+    """Progress of a background job (start_assembly, fetch_drive_folder): running/done/failed,
+    the last log lines, and its result when done."""
+    entry = _jobs.get(job)
+    if entry is None:
+        raise api.APIError("No job {!r} (jobs are forgotten when the editor restarts)".format(job))
+    code = entry["proc"].poll()
+    try:
+        with open(entry["log"], encoding="utf-8") as fh:
+            log = [l.rstrip() for l in fh if l.strip() and "HF_TOKEN" not in l
+                   and "Warning:" not in l][-40:]
+    except OSError:
+        log = []
+    state = "running" if code is None else "done" if code == 0 else "failed"
+    if code is not None and not entry["fh"].closed:
+        entry["fh"].close()
+    if state == "done" and entry["result"] is None and entry["on_done"]:
+        try:
+            entry["result"] = entry["on_done"](entry)
+        except Exception as ex:  # a result that can't be read is a failure
+            state, log = "failed", log + ["could not read the result: {:s}".format(str(ex))]
+    return {"job": job, "kind": entry["kind"], "state": state,
+            "seconds": round(time.time() - entry["started"], 1), "output": entry["output"],
+            "log": log, "result": entry["result"] if state == "done" else None}
 
 
 @tool(mutates=False)
 def assembly_job(job: str) -> dict:
-    """Progress of a start_assembly job: running/done/failed, the log so far, and a summary
-    of the editing script when done."""
-    entry = _jobs.get(job)
-    if entry is None:
-        raise api.APIError("No assembly job {!r}".format(job))
-    code = entry["proc"].poll()
-    try:
-        with open(entry["log"], encoding="utf-8") as fh:
-            log = [l.rstrip() for l in fh if l.strip() and "HF_TOKEN" not in l][-40:]
-    except OSError:
-        log = []
-    state = "running" if code is None else "done" if code == 0 else "failed"
-    result = {"job": job, "state": state, "seconds": round(time.time() - entry["started"], 1),
-              "output": entry["output"], "log": log}
-    if code is not None:
-        entry["fh"].close()
-    if state == "done":
-        result["summary"] = editing_script.summary(editing_script.load(entry["output"]))
+    """Older name of job_status."""
+    result = job_status(job)
+    if result["state"] == "done":
+        result["summary"] = result["result"]
     return result
 
 
@@ -305,9 +328,9 @@ def lay_out_editing_script(filepath: str, channel: int = 1, frame_start: int = 1
                 s.left_handle, s.right_handle = frame, frame + length
             made.append(s)
         if ev["sound"]:
-            start = frame - int(round(ev["in"] * fps))
+            start = frame - int(round(ev["sound_in"] * fps))
             try:
-                a = strips.new_sound(name=label + " (audio)", filepath=ev["path"],
+                a = strips.new_sound(name=label + " (audio)", filepath=ev["sound_path"],
                                      channel=channel + 1, frame_start=start)
                 a.left_handle, a.right_handle = frame, frame + length
                 made.append(a)

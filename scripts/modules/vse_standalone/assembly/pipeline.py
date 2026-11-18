@@ -20,7 +20,7 @@ import os
 import re
 import time
 
-from . import editing_script, match, probe, screenplay, transcribe, visual
+from . import editing_script, match, probe, screenplay, sync, transcribe, visual
 
 
 def _log(log, *parts):
@@ -53,8 +53,27 @@ def assemble(media, script=None, *, model=None, image_backend=None, cache_dir=No
     # No initial prompt: showing Whisper the character names made it invent words in the
     # silence after a take (seen with base.en). Names are matched fuzzily instead.
     prompt = None
+    # Separate sound: synced clips are heard through the recorder (better sound), and the
+    # recorder files they use don't become takes of their own.
+    synced, _unsynced = sync.sync(clips, log=log)
+    recorder_files = {r["audio"] for r in synced.values()}
     transcripts = {}
+    recorder_words = {}
+    for vid, r in synced.items():
+        if r["audio"] not in recorder_words:
+            recorder_words[r["audio"]] = transcribe.transcribe(
+                r["audio"], model, prompt=prompt, cache_dir=os.path.join(cache_dir, "words"))
+        dur = next(c["duration"] for c in clips if c["path"] == vid) or 0
+        words = [dict(w, start=round(w["start"] - r["offset"], 3), end=round(w["end"] - r["offset"], 3))
+                 for w in recorder_words[r["audio"]]["words"]
+                 if w["start"] >= r["offset"] - 0.05 and w["end"] <= r["offset"] + dur + 0.05]
+        transcripts[vid] = {"words": words, "text": " ".join(w["text"] for w in words),
+                            "duration": dur, "model": str(model), "from": r["audio"]}
+        _log(log, "heard {:s} through {:s}: {:s}".format(
+            os.path.basename(vid), os.path.basename(r["audio"]), transcripts[vid]["text"][:80]))
     for clip in clips:
+        if clip["path"] in transcripts or clip["path"] in recorder_files:
+            continue
         if clip["kind"] in ("video", "audio") and clip.get("audio_tracks"):
             t0 = time.time()
             transcripts[clip["path"]] = transcribe.transcribe(
@@ -78,7 +97,7 @@ def assemble(media, script=None, *, model=None, image_backend=None, cache_dir=No
 
     index = match.ScriptIndex(screenplay.dialogue_lines(parsed))
     matches = {p: match.match_take(t["words"], index) for p, t in transcripts.items()}
-    doc = editing_script.build(parsed, clips, transcripts, matches, groups, visuals)
+    doc = editing_script.build(parsed, clips, transcripts, matches, groups, visuals, sound=synced)
     doc["sources"]["media"] = folder
     doc["settings"] = {"whisper_model": str(model), "image_backend": visual_grouping and backend or None}
     if bad:

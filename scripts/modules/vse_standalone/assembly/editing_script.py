@@ -112,7 +112,7 @@ def _padded(take, words, media_duration):
     return round(cut_in, 3), round(cut_out, 3)
 
 
-def build(script, clips, transcripts, matches, groups=None, visuals=None, fps=None):
+def build(script, clips, transcripts, matches, groups=None, visuals=None, fps=None, sound=None):
     """Put it all together.
 
     script: ``screenplay.parse`` result. clips: probe dicts. transcripts: {path: transcribe
@@ -135,6 +135,12 @@ def build(script, clips, transcripts, matches, groups=None, visuals=None, fps=No
                          for w in words],
                      supervisor=_supervisor_placeholder())
         media[cid] = entry
+    # Synced sound: {"clip": recorder clip id, "offset"}: recorder time = clip time + offset.
+    for path, r in (sound or {}).items():
+        if path in ids and r["audio"] in ids:
+            media[ids[path]]["sound"] = {"clip": ids[r["audio"]], "offset": r["offset"],
+                                         "method": r["method"], "score": r["score"]}
+            media[ids[r["audio"]]].setdefault("synced_to", []).append(ids[path])
 
     doc = {
         "format": FORMAT, "version": VERSION, "title": script.get("title"),
@@ -210,7 +216,7 @@ def build(script, clips, transcripts, matches, groups=None, visuals=None, fps=No
                 el["take"] = None
             el["cut"] = None
         _fill_cuts(doc, scene)
-    doc["unplaced"] = [c for c in media if c not in used and not any(
+    doc["unplaced"] = [c for c in media if c not in used and not media[c].get("synced_to") and not any(
         el.get("cut") and el["cut"].get("clip") == c or (el.get("cover") or {}).get("clip") == c
         for s in doc["scenes"] for el in s["elements"])]
     return doc
@@ -575,11 +581,17 @@ def timeline(doc):
                 picture = {"clip": c["clip"], "path": doc["media"][c["clip"]]["path"],
                            "in": c["in"], "out": c["in"] + (cut["out"] - cut["in"])}
             sound = m["kind"] in ("video", "audio") and bool(m.get("audio_tracks"))
+            sound_path, sound_in = m["path"], cut["in"]
+            if m.get("sound"):      # separately recorded sound, synced
+                sound = True
+                sound_path = doc["media"][m["sound"]["clip"]]["path"]
+                sound_in = round(cut["in"] + m["sound"]["offset"], 4)
             if el["type"] == "action" and cut.get("from") == "cover":
                 sound = False   # cover footage plays mute under an action beat
             out.append({"element": el["id"], "scene": scene["id"], "type": el["type"],
                         "clip": cut["clip"], "path": m["path"], "in": cut["in"], "out": cut["out"],
-                        "sound": sound, "picture": picture, "record_start": round(t, 3)})
+                        "sound": sound, "sound_path": sound_path, "sound_in": sound_in,
+                        "picture": picture, "record_start": round(t, 3)})
             t += cut["out"] - cut["in"]
     return out
 

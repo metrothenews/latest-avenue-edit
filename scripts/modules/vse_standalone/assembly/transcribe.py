@@ -41,13 +41,47 @@ def load_audio(path, track=None, rate=16000):
     return numpy.frombuffer(raw, dtype=numpy.float32)
 
 
-def _model(name, models_dir):
-    key = (name, models_dir)
+def device():
+    """"cuda" when ctranslate2 sees an NVIDIA GPU (and VSE_ASSEMBLY_DEVICE doesn't say "cpu")."""
+    wanted = os.environ.get("VSE_ASSEMBLY_DEVICE", "auto").lower()
+    if wanted in ("cpu", "cuda"):
+        return wanted
+    try:
+        import ctranslate2
+        return "cuda" if ctranslate2.get_cuda_device_count() > 0 else "cpu"
+    except Exception:
+        return "cpu"
+
+
+def _model(name, models_dir, on=None):
+    on = on or device()
+    key = (name, models_dir, on)
     if key not in _models:
         from faster_whisper import WhisperModel
-        _models[key] = WhisperModel(name, device="cpu", compute_type="int8",
+        _models[key] = WhisperModel(name, device=on, compute_type="float16" if on == "cuda" else "int8",
                                     download_root=models_dir)
     return _models[key]
+
+
+def _run(samples, model, models_dir, **kwargs):
+    """Transcribe on the GPU if there is one; on any CUDA failure (missing cuBLAS/cuDNN
+    libraries are common on Windows) fall back to the CPU for the rest of the run."""
+    global _cuda_failed
+    on = "cpu" if _cuda_failed else device()
+    try:
+        segments, info = _model(model, models_dir, on).transcribe(samples, **kwargs)
+        return list(segments), info
+    except (RuntimeError, OSError) as ex:
+        if on != "cuda":
+            raise
+        _cuda_failed = True
+        import sys
+        print("note: GPU transcription failed ({:s}); using the CPU".format(str(ex)[:200]), file=sys.stderr)
+        segments, info = _model(model, models_dir, "cpu").transcribe(samples, **kwargs)
+        return list(segments), info
+
+
+_cuda_failed = False
 
 
 def _cache_path(path, model, cache_dir, track, prompt):
@@ -70,8 +104,8 @@ def transcribe(path, model=DEFAULT_MODEL, *, prompt=None, language="en", track=N
     duration = len(samples) / 16000.0
     words = []
     if duration > 0.2 and float(abs(samples).max()) > 1e-4:
-        segments, _info = _model(model, models_dir).transcribe(
-            samples, language=language, word_timestamps=True, beam_size=5,
+        segments, _info = _run(
+            samples, model, models_dir, language=language, word_timestamps=True, beam_size=5,
             vad_filter=True, condition_on_previous_text=False, initial_prompt=prompt)
         for segment in segments:
             for w in segment.words or ():

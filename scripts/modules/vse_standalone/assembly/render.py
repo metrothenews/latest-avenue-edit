@@ -41,14 +41,17 @@ def command(doc, output, width=None, height=None, fps=None, crf=20, preset="very
         v_in = n_in
         n_in += 1
         if ev["sound"]:
-            if pic and pic["clip"] == ev["clip"]:
+            if pic and pic["path"] == ev["sound_path"] and abs(pic["in"] - ev["sound_in"]) < 1e-3:
                 a_in = v_in
             else:
-                args += ["-ss", "{:.3f}".format(ev["in"]), "-t", "{:.3f}".format(dur), "-i", ev["path"]]
+                late = max(0.0, -ev["sound_in"])     # the recorder started after this point
+                args += ["-ss", "{:.4f}".format(max(0.0, ev["sound_in"])), "-t",
+                         "{:.3f}".format(dur), "-i", ev["sound_path"]]
                 a_in = n_in
                 n_in += 1
-            filters.append("[{:d}:a:0]aresample=48000,aformat=channel_layouts=stereo,"
-                           "apad,atrim=0:{:.3f}[a{:d}]".format(a_in, dur, k))
+            delay = ",adelay={:d}:all=1".format(int(late * 1000)) if a_in != v_in and late else ""
+            filters.append("[{:d}:a:0]aresample=48000,aformat=channel_layouts=stereo{:s},"
+                           "apad,atrim=0:{:.3f}[a{:d}]".format(a_in, delay, dur, k))
         else:
             args += ["-f", "lavfi", "-t", "{:.3f}".format(dur), "-i",
                      "anullsrc=channel_layout=stereo:sample_rate=48000"]

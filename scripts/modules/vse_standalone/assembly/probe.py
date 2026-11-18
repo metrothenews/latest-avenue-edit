@@ -104,6 +104,13 @@ def probe(path):
     info["timecode"] = timecode
     if timecode and info.get("fps"):
         info["timecode_seconds"] = timecode_to_seconds(timecode, info["fps"])
+    # Sound recorders (Broadcast WAV) store their start as samples since midnight.
+    tags = fmt.get("tags") or {}
+    ref = tags.get("time_reference")
+    if ref and audio and str(ref).isdigit() and int(ref) > 0 and audio[0].get("sample_rate"):
+        info["time_reference_seconds"] = int(ref) / int(audio[0]["sample_rate"])
+    if tags.get("encoded_by") or tags.get("originator"):
+        info["recorder"] = tags.get("originator") or tags.get("encoded_by")
     info["audio_tracks"] = [{
         "index": s.get("index"),
         "codec": s.get("codec_name"),

@@ -225,7 +225,29 @@ def make_speech(parts, path, work, gap=0.8, lead=0.5):
     return timeline, t + lead
 
 
-def make_video(path, picture, duration, audio=None, timecode="01:00:00:00"):
+# Separately recorded sound for two takes: (take, recorder file, seconds the recorder started
+# before the camera, write a BWF timecode?). The camera keeps a worse "scratch" copy.
+RECORDERS = [
+    ("A001_C001_S1_T1.mov", "ZOOM0001.WAV", 2.5, True),
+    ("A003_C001_S2_T1.mov", "ZOOM0002.WAV", 1.7, False),
+]
+SCRATCH = "highpass=f=300,lowpass=f=3000,volume=0.4"
+
+
+def make_recorder(speech, path, lead, timecode_seconds=None):
+    """Clean sound starting `lead` seconds before the camera, with a little room tone."""
+    cmd = ["ffmpeg", "-v", "error", "-y", "-i", speech, "-f", "lavfi", "-i",
+           "anoisesrc=color=pink:amplitude=0.004:sample_rate=48000",
+           "-filter_complex", "[0:a]aresample=48000,adelay={:d}:all=1,apad=pad_dur=1[s];"
+           "[s][1:a]amix=inputs=2:duration=first:normalize=0".format(int(lead * 1000)),
+           "-ar", "48000", "-ac", "1", "-c:a", "pcm_s24le"]
+    if timecode_seconds is not None:
+        cmd += ["-write_bext", "1", "-metadata",
+                "time_reference={:d}".format(int(round((timecode_seconds - lead) * 48000)))]
+    subprocess.run(cmd + [path], check=True)
+
+
+def make_video(path, picture, duration, audio=None, timecode="01:00:00:00", scratch=False):
     cmd = ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-t", "{:.3f}".format(duration),
            "-i", PICTURES[picture]]
     if audio:
@@ -233,6 +255,8 @@ def make_video(path, picture, duration, audio=None, timecode="01:00:00:00"):
     else:
         cmd += ["-f", "lavfi", "-t", "{:.3f}".format(duration),
                 "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"]
+    if scratch:
+        cmd += ["-af", SCRATCH]
     cmd += ["-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-preset", "ultrafast",
             "-pix_fmt", "yuv420p", "-c:a", "aac", "-ar", "48000", "-ac", "2", "-shortest",
             "-timecode", timecode, path]
@@ -247,13 +271,20 @@ def main():
         os.makedirs(d, exist_ok=True)
     write_pdf(os.path.join(out, "script.pdf"), script_pages())
 
-    truth = {"lines": LINES, "takes": {}}
+    truth = {"lines": LINES, "takes": {}, "sync": {}}
+    recorders = {r[0]: r for r in RECORDERS}
     for n, (name, picture, parts) in enumerate(TAKES):
         wav = os.path.join(work, name + ".wav")
         timeline, duration = make_speech(parts, wav, work)
         make_video(os.path.join(media, name), picture, duration, wav,
-                   timecode="01:{:02d}:00:00".format(n + 1))
+                   timecode="01:{:02d}:00:00".format(n + 1), scratch=name in recorders)
         truth["takes"][name] = timeline
+        if name in recorders:
+            _take, rec, lead, with_tc = recorders[name]
+            make_recorder(wav, os.path.join(media, rec), lead,
+                          3600 + 60 * (n + 1) if with_tc else None)
+            truth["sync"][name] = {"audio": rec, "offset": lead,
+                                   "method": "timecode" if with_tc else "waveform"}
     name, parts = VOICE_OVER
     timeline, _ = make_speech(parts, os.path.join(media, name), work)
     truth["takes"][name] = timeline
