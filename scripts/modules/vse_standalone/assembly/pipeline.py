@@ -39,7 +39,7 @@ def assemble(media, script=None, *, model=None, image_backend=None, cache_dir=No
         folder = os.path.dirname(os.path.abspath(media[0])) if media else None
         clips = [probe.probe(p) for p in media]
     cache_dir = cache_dir or os.path.join(folder or os.getcwd(), ".assembly_cache")
-    model = model or transcribe.DEFAULT_MODEL
+    model = model or transcribe.default_model()
     bad = [c for c in clips if c.get("error")]
     clips = [c for c in clips if not c.get("error")]
     _log(log, "media: {:d} files ({:d} unreadable)".format(len(clips), len(bad)))
@@ -201,7 +201,7 @@ def assemble_music(media, song=None, lyrics=None, *, model=None, image_backend=N
     folder = os.path.abspath(media)
     clips = [c for c in probe.scan(folder) if not c.get("error")]
     cache_dir = cache_dir or os.path.join(folder, ".assembly_cache")
-    model = model or transcribe.DEFAULT_MODEL
+    model = model or transcribe.default_model()
     if song:
         song_info = probe.probe(song)
     else:

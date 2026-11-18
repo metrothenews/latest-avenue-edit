@@ -281,7 +281,8 @@ def _drums(path, bpm, seconds=20.0, start=0.37, sr=22050):
 def test_music(samples):
     from vse_standalone.assembly import music, pipeline, render
     folder = os.path.join(samples, "music")
-    os.makedirs(folder, exist_ok=True)
+    shutil.rmtree(folder, ignore_errors=True)
+    os.makedirs(folder)
     for bpm in (92.0, 123.0, 140.0):
         truth = _drums(os.path.join(folder, "song.wav"), bpm)
         r = music.analyse(os.path.join(folder, "song.wav"))
@@ -304,7 +305,7 @@ def test_music(samples):
     editing_script.choose_take(doc, els[1]["id"], 1)
     check("music: swapping a shot keeps the song", els[1]["cut"]["clip"] == doc["music"]["song"]
           and els[1]["cover"]["clip"] == els[1]["takes"][1]["clip"])
-    out = os.path.join(folder, "mv.mp4")
+    out = os.path.join(samples, "mv.mp4")      # outside the footage folder
     r = render.render(doc, out)
     got = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0",
                           out], capture_output=True, text=True).stdout.strip()

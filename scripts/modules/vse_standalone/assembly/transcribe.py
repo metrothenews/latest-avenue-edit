@@ -21,7 +21,13 @@ import os
 import re
 import subprocess
 
-DEFAULT_MODEL = os.environ.get("VSE_ASSEMBLY_WHISPER", "base.en")
+DEFAULT_MODEL = os.environ.get("VSE_ASSEMBLY_WHISPER")   # None: chosen by default_model()
+
+
+def default_model():
+    """small.en on an NVIDIA card (fits easily in 8 GB, clearly better on location sound),
+    base.en on the processor; VSE_ASSEMBLY_WHISPER overrides."""
+    return DEFAULT_MODEL or ("small.en" if device() == "cuda" else "base.en")
 _models = {}
 
 
@@ -58,7 +64,7 @@ def _model(name, models_dir, on=None):
     key = (name, models_dir, on)
     if key not in _models:
         from faster_whisper import WhisperModel
-        _models[key] = WhisperModel(name, device=on, compute_type="float16" if on == "cuda" else "int8",
+        _models[key] = WhisperModel(name, device=on, compute_type="int8_float16" if on == "cuda" else "int8",
                                     download_root=models_dir)
     return _models[key]
 
@@ -93,9 +99,10 @@ def _cache_path(path, model, cache_dir, track, prompt):
         os.path.basename(path), safe_model, key))
 
 
-def transcribe(path, model=DEFAULT_MODEL, *, prompt=None, language="en", track=None,
+def transcribe(path, model=None, *, prompt=None, language="en", track=None,
                cache_dir=None, models_dir=None):
     """-> {"words": [{"text", "norm", "start", "end", "p"}], "text", "duration", "model"}."""
+    model = model or default_model()
     cache = _cache_path(path, model, cache_dir, track, prompt) if cache_dir else None
     if cache and os.path.exists(cache):
         with open(cache, encoding="utf-8") as fh:

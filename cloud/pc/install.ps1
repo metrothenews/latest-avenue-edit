@@ -239,7 +239,19 @@ if ($Memory) { $runArgs += @("--memory", $Memory) }
 if ($Gpu) { $runArgs += @("--gpus", "all") }
 if ($ModelUrl) { $runArgs += @("-e", "LLM_MODEL_URL=$ModelUrl") }
 $runArgs += $Image
-Run "Starting the server" { docker @runArgs | Out-Null }
+docker @runArgs | Out-Null
+if ($LASTEXITCODE -ne 0 -and $Gpu) {
+    # Docker Desktop could not hand the graphics card over (WSL 2 GPU support missing or an
+    # old driver): start without it; transcription then runs on the processor.
+    Write-Host "Docker could not give the container the graphics card; starting without it (processor only)."
+    Write-Host "To use the card: update the NVIDIA driver and Docker Desktop, then run this again."
+    Quiet { docker rm -f $Name }
+    $runArgs = @($runArgs | Where-Object { $_ -ne "--gpus" -and $_ -ne "all" })
+    $Gpu = $false
+    Run "Starting the server" { docker @runArgs | Out-Null }
+} elseif ($LASTEXITCODE -ne 0) {
+    Fail "Starting the server failed (exit code $LASTEXITCODE)."
+}
 
 $healthy = $false
 foreach ($try in 1..30) {
@@ -252,7 +264,11 @@ if (-not $healthy) {
     docker logs --tail 30 $Name
     Fail "the server did not answer on port $Port. Its last messages are above."
 }
-Write-Host "The gateway is running on this PC (port $Port, $Cpus cores)."
+Write-Host ("The gateway is running on this PC (port $Port, $Cpus cores" + $(if ($Gpu) { ", graphics card)." } else { ")." }))
+if ($Gpu) {
+    $seen = (docker exec $Name /opt/assembly-env/bin/python -c "import ctranslate2; print(ctranslate2.get_cuda_device_count())" 2>$null)
+    Write-Host "Graphics cards the transcription sees inside the container: $seen"
+}
 
 # ---------------------------------------------------------------------------
 $address = ""
