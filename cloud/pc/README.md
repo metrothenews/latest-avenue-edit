@@ -11,6 +11,52 @@ browser: latestavenue.com/edit  ──https──▶  tunnel address  ──▶ 
                                                            /data  =  a folder on the PC
 ```
 
+## Test the new assembly pipeline in Docker (leaves the running editor alone)
+
+Everything is built and tested in a Linux container: a generated 12x12 pixel fake shoot (a
+screenplay PDF, takes with spoken dialogue and fluffs, separate recorder files synced by
+timecode, waveform and clap, a song with lyrics) goes through the whole pipeline: script,
+sound sync, transcription, take matching and picture grouping, the editing script, the
+Blender sequence, the ffmpeg render and the Resolve / Premiere / Final Cut exports. Nothing of
+yours is used, and the running editor (container `latest-avenue-edit`, image
+`latest-avenue-edit:local`) is not touched: the test images have their own tags and the test
+container has no name or ports.
+
+Needs Docker Desktop (WSL 2) running, Git, and about 10 GB free. In **PowerShell**:
+
+```powershell
+$env:GIT_LFS_SKIP_SMUDGE = "1"
+git clone --depth 1 --filter=blob:none --sparse --branch claude/assembly-pipeline https://github.com/metrothenews/latest-avenue-edit $env:USERPROFILE\la-edit-test
+cd $env:USERPROFILE\la-edit-test
+git sparse-checkout set cloud scripts/modules/vse_standalone scripts/startup tools tests/vse
+powershell -ExecutionPolicy Bypass -File cloud\pc\test.ps1
+```
+
+With the NVIDIA card (RTX 3050), add `-Gpu`. It builds the CUDA libraries in and runs with
+`--gpus all`; if Docker can't hand the card over, it runs on the processor and says so. The
+first lines of the output say which one the speech model used.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File cloud\pc\test.ps1 -Gpu
+```
+
+The first run takes 15-30 minutes (it fetches the editor's Linux build, compiles llama.cpp,
+installs the Python packages) and downloads the speech model (about 140 MB on the processor,
+about 480 MB for the GPU's small.en) into the Docker volume `la-edit-test-models`. Later runs:
+add `-NoBuild` (about a minute). It ends with **All tests passed** or the lines marked `FAIL`.
+
+The same by hand, on any system with Docker (the Linux build file
+`latest-avenue-video-linux-x64.tar.xz` must be in the folder; test.ps1 fetches it):
+
+```powershell
+docker build -f cloud/Dockerfile --build-arg ASSEMBLY_CUDA=1 -t latest-avenue-edit:candidate .
+docker build -f cloud/Dockerfile.test --build-arg BASE=latest-avenue-edit:candidate -t latest-avenue-edit:test .
+docker run --rm --gpus all -v la-edit-test-models:/data/models latest-avenue-edit:test
+```
+
+Without an NVIDIA card: `ASSEMBLY_CUDA=0` and no `--gpus all`. To make a fake shoot to look at:
+`python tests/vse/assembly/make_samples.py shoot --tiny` (needs ffmpeg and espeak-ng).
+
 ## What runs on the PC
 
 The same container as the cloud version (see [../README.md](../README.md)), in Docker
