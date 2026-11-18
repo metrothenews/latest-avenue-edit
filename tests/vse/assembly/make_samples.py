@@ -90,8 +90,9 @@ TAKES = [
 VOICE_OVER = ("VO_MAYA_01.wav", [(MAYA, LINES["L6"], "L6")])
 BROLL = ("A003_C003_BROLL.mov", "broll2", 4.0)
 
-# Frame size, rate and sound format; --tiny makes 12x12 pixel, 16 kHz mono files.
-FORMAT = {"w": 640, "h": 360, "rate": 24, "ar": 48000, "ac": 2, "abr": "128k"}
+# Frame size, rate, sound format, and the length of clips without speech (None: as before);
+# --tiny makes 124x70 pixel, 1-second, 16 kHz mono files.
+FORMAT = {"w": 640, "h": 360, "rate": 24, "ar": 48000, "ac": 2, "abr": "128k", "clip": None}
 
 
 def pictures():
@@ -383,11 +384,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("output", nargs="?", default="assembly_samples")
     parser.add_argument("--tiny", action="store_true",
-                        help="12x12 pixel video and 16 kHz mono sound (a whole shoot in about 1 MB)")
+                        help="small and short: 124x70 (16:9) video, 1 s clips (dialogue takes as long "
+                             "as their speech), 16 kHz mono sound")
     parser.add_argument("--no-music", action="store_true", help="skip the music video shoot")
     args = parser.parse_args()
     if args.tiny:
-        FORMAT.update(w=12, h=12, ar=16000, ac=1, abr="32k")
+        FORMAT.update(w=124, h=70, ar=16000, ac=1, abr="32k", clip=1.0)
     out = os.path.abspath(args.output)
     media = os.path.join(out, "media")
     work = os.path.join(out, ".work")
@@ -425,7 +427,7 @@ def main():
                     "-c:a", "pcm_s16le", os.path.join(media, name)], check=True)
     truth["takes"][name] = timeline
     name, picture, duration = BROLL
-    make_video(os.path.join(media, name), picture, duration, timecode="01:10:00:00")
+    make_video(os.path.join(media, name), picture, FORMAT["clip"] or duration, timecode="01:10:00:00")
     truth["takes"][name] = []
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", pictures()["wide2"],
                     "-frames:v", "1", os.path.join(media, "STILL_diner_sign.jpg")], check=True)
@@ -435,7 +437,7 @@ def main():
         os.makedirs(music, exist_ok=True)
         truth["music"] = make_song(os.path.join(music, "song.wav"), os.path.join(out, "lyrics.txt"), work)
         for k, look in enumerate(("red", "blue", "grey", "wide1", "wide2")):
-            make_video(os.path.join(music, "mv_{:02d}_{:s}.mp4".format(k + 1, look)), look, 6.0,
+            make_video(os.path.join(music, "mv_{:02d}_{:s}.mp4".format(k + 1, look)), look, FORMAT["clip"] or 6.0,
                        timecode="02:{:02d}:00:00".format(k))
     for f in os.listdir(work):
         os.remove(os.path.join(work, f))

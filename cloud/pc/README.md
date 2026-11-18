@@ -13,7 +13,7 @@ browser: latestavenue.com/edit  ──https──▶  tunnel address  ──▶ 
 
 ## Test the new assembly pipeline in Docker (leaves the running editor alone)
 
-Everything is built and tested in a Linux container: a generated 12x12 pixel fake shoot (a
+Everything is built and tested in a Linux container: a generated 124x70 pixel fake shoot of 1-second clips (a
 screenplay PDF, takes with spoken dialogue and fluffs, separate recorder files synced by
 timecode, waveform and clap, a song with lyrics) goes through the whole pipeline: script,
 sound sync, transcription, take matching and picture grouping, the editing script, the

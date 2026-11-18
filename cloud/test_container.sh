@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 #
 # The whole assembly pipeline, end to end, inside the editor's container, on a generated
-# 12x12 pixel shoot: screenplay PDF -> sound sync -> transcription -> take matching and
+# 124x70 pixel shoot: screenplay PDF -> sound sync -> transcription -> take matching and
 # picture grouping -> editing script -> Blender sequence -> ffmpeg render + Resolve / Premiere /
 # Final Cut exports, plus the music-video path and the website's tools. Uses the NVIDIA card
 # when the container has one (docker run --gpus all), the processor otherwise.
@@ -39,7 +39,7 @@ except ImportError:
     print("picture model: colour signature (torch not installed)")
 PY
 
-run "Generate the 12x12 test shoot" python3 $T/assembly/make_samples.py "$SHOOT" --tiny
+run "Generate the 124x70 test shoot" python3 $T/assembly/make_samples.py "$SHOOT" --tiny
 run "Assembly: script, sync, transcription, matching, grouping, edits, render, exports, music" \
     $PY $T/test_assembly.py --full --samples "$SHOOT"
 run "Editor tools in Blender: sequence, takes, uploads, sync fix, thumbnails, song job" \

@@ -4,7 +4,7 @@
 
 <#
 .SYNOPSIS
-Builds the editor's container and runs every test in it, on a generated 12x12 pixel shoot.
+Builds the editor's container and runs every test in it, on a generated 124x70 pixel shoot.
 
 .DESCRIPTION
 Leaves the running editor alone: the images are tagged latest-avenue-edit:candidate and

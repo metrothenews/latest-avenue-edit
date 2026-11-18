@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 # Test image: the editor image plus a speech synthesizer and the tests. It generates a tiny
-# fake shoot (12x12 pixel video, 16 kHz mono sound, a screenplay PDF, a song) and runs the
+# fake shoot (124x70 pixel 1-second clips, 16 kHz mono sound, a screenplay PDF, a song) and runs the
 # whole pipeline on it. Build the editor image first, then this, from the repository root:
 #
 #   docker build -f cloud/Dockerfile -t latest-avenue-edit:candidate .
